@@ -49,3 +49,16 @@ Everything is up to date. No new pings sent.
 2026-05-19 12:56:18,646 - INFO - PING: The Hero Returns Ch.154
 2026-05-19 12:56:18,648 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
 2026-05-19 12:56:18,649 - INFO - --- SCAN COMPLETE ---
+2026-05-19 21:48:47,235 - INFO - --- ORACLE IS SCANNING THE HOMEPAGE ---
+2026-05-19 21:48:47,235 - INFO - Attempting to reach the tower (Try 1/3)...
+2026-05-19 21:48:48,952 - INFO - Connection Successful!
+2026-05-19 21:48:49,269 - INFO - Detected 20 series on the homepage.
+2026-05-19 21:48:49,270 - INFO - PING: Murim Psychopath Ch.27
+2026-05-19 21:48:51,268 - INFO - PING: Star-Embracing Swordmaster Ch.122
+2026-05-19 21:48:52,544 - INFO - PING: I Became the First Prince: Legend of Sword's Song Ch.36
+2026-05-19 21:48:53,796 - INFO - PING: The Max-Level Player's 100th Regression Ch.84
+2026-05-19 21:48:55,223 - INFO - PING: Infinite Mage Ch.169
+2026-05-19 21:48:56,323 - INFO - PING: Villain To Kill Ch.235
+2026-05-19 21:48:57,495 - INFO - PING: Return of The Unrivaled Spear Knight Ch.198
+2026-05-19 21:48:58,515 - INFO - PING: Debtbound by Blood Ch.26
+2026-05-19 21:48:59,545 - INFO - --- SCAN COMPLETE ---
