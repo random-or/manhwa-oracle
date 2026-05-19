@@ -3,11 +3,22 @@ import re
 import json
 import os
 import time
+import logging
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-# --- 1. SETUP & SECRETS ---
-# Loads your BOT_TOKEN and CHAT_ID from the hidden .env file
+# --- 1. LOGGING SETUP ---
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("cron_log.txt"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger("Oracle")
+
+# --- 2. SETUP & SECRETS ---
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -17,105 +28,108 @@ TARGET_URL = "https://asurascans.com/"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 MEMORY_FILE = "memory.json"
 
-# --- 2. THE MESSENGER ---
+# --- 3. THE MESSENGER ---
 def send_telegram(message):
     """Sends a notification to your phone via Telegram."""
     if not BOT_TOKEN or not CHAT_ID:
-        print("❌ Error: BOT_TOKEN or CHAT_ID missing from .env!")
+        logger.error("BOT_TOKEN or CHAT_ID missing from .env!")
         return
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message}
     try:
-        requests.post(url, json=payload, timeout=10)
+        response = requests.post(url, json=payload, timeout=10)
+        response.raise_for_status()
     except Exception as e:
-        print(f"⚠️ Telegram Send Failed: {e}")
+        logger.warning(f"Telegram Send Failed: {e}")
 
-# --- 3. THE ENGINE ---
+# --- 4. THE ENGINE ---
 def run_oracle():
-    # Load Memory from the JSON 'notebook'
+    # Load Memory
     if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r") as f:
-            history = json.load(f)
+        try:
+            with open(MEMORY_FILE, "r") as f:
+                history = json.load(f)
+        except json.JSONDecodeError:
+            logger.error("Memory file corrupted. Resetting.")
+            history = {}
     else:
         history = {}
 
-    print("--- ORACLE IS SCANNING THE HOMEPAGE ---")
+    logger.info("--- ORACLE IS SCANNING THE HOMEPAGE ---")
 
-    # --- RETRY LOGIC (To handle 50% packet loss/unstable internet) ---
+    # --- RETRY LOGIC ---
     max_retries = 3
-    retry_delay = 5  # seconds
+    retry_delay = 5
     response = None
 
     for attempt in range(max_retries):
         try:
-            print(f"Attempting to reach the tower (Try {attempt + 1}/{max_retries})...")
+            logger.info(f"Attempting to reach the tower (Try {attempt + 1}/{max_retries})...")
             response = requests.get(TARGET_URL, headers=HEADERS, timeout=15)
             if response.status_code == 200:
-                print("✅ Connection Successful!")
+                logger.info("Connection Successful!")
                 break
         except Exception as e:
-            print(f"⚠️ Connection flicker: {e}")
+            logger.warning(f"Connection flicker: {e}")
             if attempt < max_retries - 1:
-                print(f"Waiting {retry_delay}s to try again...")
                 time.sleep(retry_delay)
 
-    # --- DATA EXTRACTION ---
-    if response and response.status_code == 200:
-        soup = BeautifulSoup(response.text, "html.parser")
-        
-        # Scrape all update containers
-        items = soup.find_all('div', class_='utao')
-        
-        # THE HEALTH CHECK LINE
-        print(f"DEBUG: Detected {len(items)} items on the homepage.")
-        
-        new_updates_count = 0
-        
-        for item in items:
-            try:
-                # Get Title
-                title_tag = item.find('h4')
-                if not title_tag: continue
-                title = title_tag.text.strip()
-                
-                # Get Chapter
-                chapter_li = item.find('li')
-                if not chapter_li: continue
-                chapter_text = chapter_li.text.strip()
-                
-                # Extract Number (e.g., "Chapter 108" -> 108)
-                match = re.search(r'Chapter\s*(\d+)', chapter_text)
-                
-                if match:
-                    current_ch = int(match.group(1))
-                    last_seen = int(history.get(title, 0))
-                    
-                    # Logic: Is it actually new?
-                    if current_ch > last_seen:
-                        if last_seen == 0:
-                            msg = f"🌟 NEW SERIES TRACKED!\n{title}\nStarting at Chapter {current_ch}"
-                        else:
-                            msg = f"🔥 NEW CHAPTER!\n{title}\nNow at Chapter {current_ch}"
-                        
-                        print(f"[!] {msg}")
-                        send_telegram(msg)
-                        history[title] = str(current_ch)
-                        new_updates_count += 1
-            except Exception as item_err:
-                continue # Skip one broken item rather than crashing everything
-        
-        if new_updates_count == 0:
-            print("Everything is up to date. No new pings sent.")
-            
-    else:
-        print("❌ Oracle failed to reach the server. Check your connection.")
+    if not response or response.status_code != 200:
+        logger.error(f"Oracle failed to reach the server. Status: {response.status_code if response else 'No Response'}")
+        return
 
+    # --- DATA EXTRACTION (Updated with Scout V3 logic) ---
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    # Scout V3 Logic: Find titles with specific Tailwind classes
+    titles = soup.find_all('a', class_=re.compile(r'font-bold.*text-base'))
+    logger.info(f"Detected {len(titles)} series on the homepage.")
+    
+    new_updates_count = 0
+    
+    for title_tag in titles:
+        try:
+            title = title_tag.get_text(strip=True)
+            
+            # Find the chapter div (next sibling)
+            chapters_div = title_tag.find_next_sibling('div')
+            if not chapters_div:
+                continue
+                
+            latest_ch_tag = chapters_div.find('a')
+            if not latest_ch_tag:
+                continue
+                
+            ch_text = latest_ch_tag.get_text(separator=" ", strip=True)
+            match = re.search(r'Chapter\s*(\d+)', ch_text)
+            
+            if match:
+                current_ch = int(match.group(1))
+                last_seen = int(history.get(title, 0))
+                
+                if current_ch > last_seen:
+                    if last_seen == 0:
+                        msg = f"🌟 NEW SERIES TRACKED!\n{title}\nStarting at Chapter {current_ch}"
+                    else:
+                        msg = f"🔥 NEW CHAPTER!\n{title}\nNow at Chapter {current_ch}"
+                    
+                    logger.info(f"PING: {title} Ch.{current_ch}")
+                    send_telegram(msg)
+                    history[title] = current_ch
+                    new_updates_count += 1
+        except Exception as item_err:
+            logger.debug(f"Skipping item due to error: {item_err}")
+            continue
+
+    if new_updates_count == 0:
+        logger.info("Everything is up to date.")
+            
     # Save Memory
     with open(MEMORY_FILE, "w") as f:
-        json.dump(history, f)
+        json.dump(history, f, indent=4)
 
-    print("--- SCAN COMPLETE ---")
+    logger.info("--- SCAN COMPLETE ---")
 
 if __name__ == "__main__":
     run_oracle()

@@ -4,3 +4,48 @@ Attempting to reach the tower (Try 1/3)...
 DEBUG: Detected 0 items on the homepage.
 Everything is up to date. No new pings sent.
 --- SCAN COMPLETE ---
+2026-05-19 12:56:15,714 - INFO - --- ORACLE IS SCANNING THE HOMEPAGE ---
+2026-05-19 12:56:15,715 - INFO - Attempting to reach the tower (Try 1/3)...
+2026-05-19 12:56:18,279 - INFO - Connection Successful!
+2026-05-19 12:56:18,627 - INFO - Detected 20 series on the homepage.
+2026-05-19 12:56:18,628 - INFO - PING: I Obtained a Mythic Item Ch.180
+2026-05-19 12:56:18,628 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,629 - INFO - PING: My Wife is the Demonic Cult Leader Ch.66
+2026-05-19 12:56:18,629 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,629 - INFO - PING: The Nebula's Civilization Ch.130
+2026-05-19 12:56:18,630 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,630 - INFO - PING: Limit-Breaking Genius Mage Ch.62
+2026-05-19 12:56:18,630 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,630 - INFO - PING: Reincarnator Ch.134
+2026-05-19 12:56:18,631 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,631 - INFO - PING: What a Bountiful Harvest, Demon Lord! Ch.67
+2026-05-19 12:56:18,631 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,631 - INFO - PING: The Regressed Mercenary's Machinations Ch.90
+2026-05-19 12:56:18,632 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,632 - INFO - PING: Absolute Regression Ch.102
+2026-05-19 12:56:18,632 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,632 - INFO - PING: Immortalâs Way of Life Ch.13
+2026-05-19 12:56:18,633 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,633 - INFO - PING: The Heavenly Demon Can't Live a Normal Life Ch.201
+2026-05-19 12:56:18,633 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,633 - INFO - PING: The Shepherd Wizard Ch.20
+2026-05-19 12:56:18,634 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,636 - INFO - PING: Breakers Ch.84
+2026-05-19 12:56:18,637 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,637 - INFO - PING: The Wandering Knightâs Survival Manual Ch.42
+2026-05-19 12:56:18,637 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,640 - INFO - PING: Martial God Regressed to Level 2 Ch.117
+2026-05-19 12:56:18,640 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,641 - INFO - PING: The Novelâs Extra Ch.157
+2026-05-19 12:56:18,641 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,641 - INFO - PING: Heavenly Grand Archive's Young Master Ch.180
+2026-05-19 12:56:18,642 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,644 - INFO - PING: The Tutorial is Too Hard Ch.270
+2026-05-19 12:56:18,644 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,645 - INFO - PING: The Indomitable Martial King Ch.134
+2026-05-19 12:56:18,645 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,645 - INFO - PING: Logging 10,000 Years into the Future Ch.320
+2026-05-19 12:56:18,646 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,646 - INFO - PING: The Hero Returns Ch.154
+2026-05-19 12:56:18,648 - ERROR - BOT_TOKEN or CHAT_ID missing from .env!
+2026-05-19 12:56:18,649 - INFO - --- SCAN COMPLETE ---
