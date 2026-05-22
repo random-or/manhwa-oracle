@@ -1,4 +1,4 @@
-import re
+from datetime import datetime, timezone
 from typing import List, Dict, Union
 from bs4 import BeautifulSoup
 from .base import BaseScraper, logger
@@ -13,7 +13,7 @@ class WebtoonScraper(BaseScraper):
         return "https://www.webtoons.com/en/"
 
     def get_latest_chapters(self) -> List[Dict[str, Union[str, int, float]]]:
-        url = "https://www.webtoons.com/en/dailySchedule"
+        url = "https://www.webtoons.com/en/originals"
         try:
             self.rotate_user_agent()
             headers = self.headers.copy()
@@ -26,42 +26,27 @@ class WebtoonScraper(BaseScraper):
             soup = BeautifulSoup(response.text, "html.parser")
             updates = []
             
-            # Webtoon daily schedule has lists of items
-            daily_lists = soup.find_all('ul', class_='daily_card')
-            for d_list in daily_lists:
-                items = d_list.find_all('li')
-                for item in items:
-                    try:
-                        title_tag = item.find('p', class_='subj')
-                        if not title_tag: continue
-                        title = title_tag.get_text(strip=True)
-                        
-                        # Webtoon's daily schedule doesn't explicitly list chapter numbers easily, 
-                        # it just shows it's updated today. We might need to go to the link to get the exact chapter
-                        # Or extract it if available. Usually, we can just look at the 'update' icon.
-                        # For the sake of standardizing, we will assign chapter 0 for webtoon if we can't find it,
-                        # and rely on the fact it was updated today.
-                        
-                        link_tag = item.find('a')
-                        if not link_tag: continue
-                        url = link_tag.get('href')
-                        
-                        # Let's hit the specific series page briefly to get the latest chapter
-                        # To avoid hammering, we'll only do a few or just try to extract chapter from URL if possible.
-                        # Actually hitting the series page for every update will be too slow and rate limited.
-                        # We will use chapter 0.0 or random hash to trigger update if needed, but wait, Webtoon shows updates.
-                        # We will just parse the 'up' tag.
-                        is_up = item.find('p', class_='icon_area')
-                        if is_up and 'up' in is_up.get_text(strip=True).lower():
-                             updates.append({
-                                 "title": title,
-                                 "chapter": 0.0,
-                                 "url": url,
-                                 "site": self.site_name
-                             })
-                             
-                    except Exception as e:
-                        logger.debug(f"[{self.site_name}] Error parsing item: {e}")
+            # The old /dailySchedule page now redirects to /originals. Updated titles
+            # are flagged with an UP badge; Webtoon does not expose chapter numbers on
+            # this page, so use YYYYMMDD as a stable daily update marker.
+            daily_marker = int(datetime.now(timezone.utc).strftime("%Y%m%d"))
+            for link_tag in soup.select('a[href*="/list?title_no="]'):
+                try:
+                    item = link_tag.find_parent('li')
+                    if not item or not item.select_one('.badge_up, .badge_up2'):
+                        continue
+                    title_tag = item.select_one('.title')
+                    title = title_tag.get_text(strip=True) if title_tag else link_tag.get_text(" ", strip=True)
+                    chapter_url = link_tag.get('href')
+                    if title and chapter_url:
+                        updates.append({
+                            "title": title,
+                            "chapter": daily_marker,
+                            "url": self.absolute_url(chapter_url),
+                            "site": self.site_name
+                        })
+                except Exception as e:
+                    logger.debug(f"[{self.site_name}] Error parsing item: {e}")
             return updates
         except Exception as e:
             logger.error(f"[{self.site_name}] Scraper error: {e}")

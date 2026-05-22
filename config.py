@@ -24,7 +24,23 @@ class Config:
     # Dead man switch limit
     MAX_FAILURES_BEFORE_ALERT: int = 3
     
-    # Time for daily digest (Hour in 24h format, e.g., 21 = 9 PM)
-    DIGEST_HOUR: int = 21
+    # Times for Telegram digests (24h hours). Default matches the Termux cron
+    # schedule: 06:00 and 18:00.
+    DIGEST_HOURS: set[int] = {
+        int(hour.strip())
+        for hour in os.getenv("DIGEST_HOURS", "6,18").split(",")
+        if hour.strip()
+    }
+
+    # Scrapers currently blocked/dead from this runtime are skipped by default
+    # so normal tests and scans only use sources that can return usable updates.
+    DISABLED_SCRAPERS: set[str] = {
+        name.strip().lower()
+        for name in os.getenv(
+            "DISABLED_SCRAPERS",
+            "bato,leviatan,mangakakalot,mangaplus,reaper",
+        ).split(",")
+        if name.strip()
+    }
 
 config = Config()

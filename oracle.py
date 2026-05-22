@@ -2,7 +2,7 @@ import argparse
 import time
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from config import config
 from memory import MemoryManager
 from notifier import TelegramNotifier
@@ -94,24 +94,30 @@ class OracleOrchestrator:
         """Shows chapter history for a series."""
         from database import SessionLocal, ChapterHistory
         session = SessionLocal()
-        history = session.query(ChapterHistory).filter_by(series_title=title).order_by(ChapterHistory.read_at.desc()).limit(10).all()
-        if not history:
-            print(f"No history found for '{title}'.")
-            return
-        print(f"\n📖 History for '{title}':")
-        for h in history:
-            print(f"  - Ch. {h.chapter} on {h.site} ({h.read_at.strftime('%Y-%m-%d %H:%M')})")
+        try:
+            history = session.query(ChapterHistory).filter_by(series_title=title).order_by(ChapterHistory.read_at.desc()).limit(10).all()
+            if not history:
+                print(f"No history found for '{title}'.")
+                return
+            print(f"\n📖 History for '{title}':")
+            for h in history:
+                print(f"  - Ch. {h.chapter} on {h.site} ({h.read_at.strftime('%Y-%m-%d %H:%M')})")
+        finally:
+            session.close()
 
     def action_site_status(self):
         """Shows status of all sites."""
         from database import SessionLocal, SiteStatus
         session = SessionLocal()
-        statuses = session.query(SiteStatus).all()
-        print("\n🌐 Site Statuses:")
-        if not statuses:
-            print("  No site statuses recorded yet.")
-        for s in statuses:
-            print(f"  - {s.site_name}: {s.status} (Last Checked: {s.last_checked.strftime('%Y-%m-%d %H:%M')})")
+        try:
+            statuses = session.query(SiteStatus).all()
+            print("\n🌐 Site Statuses:")
+            if not statuses:
+                print("  No site statuses recorded yet.")
+            for s in statuses:
+                print(f"  - {s.site_name}: {s.status} (Last Checked: {s.last_checked.strftime('%Y-%m-%d %H:%M')})")
+        finally:
+            session.close()
 
     def action_heal(self, site: str):
         """Attempts to manually heal a site."""
@@ -127,16 +133,20 @@ class OracleOrchestrator:
             print(f"✅ Successfully healed! New URL: {new_url}")
         else:
             print(f"❌ Failed to heal {scraper.site_name}.")
+        healer.close()
 
     def action_stats(self):
         """Shows overall statistics."""
         from database import SessionLocal, Series, ChapterHistory
         session = SessionLocal()
-        total_series = session.query(Series).count()
-        total_chapters = session.query(ChapterHistory).count()
-        print("\n📈 Oracle Statistics:")
-        print(f"  - Total Series Tracked: {total_series}")
-        print(f"  - Total Chapters Read: {total_chapters}")
+        try:
+            total_series = session.query(Series).count()
+            total_chapters = session.query(ChapterHistory).count()
+            print("\n📈 Oracle Statistics:")
+            print(f"  - Total Series Tracked: {total_series}")
+            print(f"  - Total Chapters Read: {total_chapters}")
+        finally:
+            session.close()
 
     def action_migrate(self):
         """Migrates data from JSON to SQLite."""
@@ -164,7 +174,8 @@ class OracleOrchestrator:
                 status = SiteStatus(site_name=scraper.site_name, status="ACTIVE")
                 session.add(status)
             else:
-                status.last_checked = datetime.utcnow()
+                status.last_checked = datetime.now(timezone.utc).replace(tzinfo=None)
+            status.status = "ACTIVE"
             session.commit()
 
             updates = scraper.get_latest_chapters()
@@ -217,11 +228,12 @@ class OracleOrchestrator:
         else:
             self.memory.state["fail_count"] = 0
 
-        # Daily Summary Logic
+        # Digest logic. The cron is expected to run twice a day, and each
+        # configured digest hour should be allowed to send once per day.
         now = datetime.now()
-        today_str = now.strftime("%Y-%m-%d")
+        digest_key = now.strftime("%Y-%m-%d-%H")
         
-        if now.hour == config.DIGEST_HOUR and self.memory.state.get("last_summary_date") != today_str:
+        if now.hour in config.DIGEST_HOURS and self.memory.state.get("last_digest_key") != digest_key:
             if self.memory.queue:
                 self.notifier.send_daily_digest(self.memory.queue)
                 logger.info(f"Digest sent with {len(self.memory.queue)} updates.")
@@ -229,13 +241,16 @@ class OracleOrchestrator:
             else:
                 logger.info("Digest time reached but queue is empty.")
                 
-            self.memory.state["last_summary_date"] = today_str
+            self.memory.state["last_digest_key"] = digest_key
+            self.memory.state["last_summary_date"] = now.strftime("%Y-%m-%d")
 
         if new_updates_count == 0:
             logger.info("No new updates found this run.")
             
         # Save all states
         self.memory.save_all()
+        healer.close()
+        session.close()
         logger.info("--- SCAN COMPLETE ---")
 
 def main():
@@ -252,6 +267,7 @@ def main():
     parser.add_argument("--heal", type=str, metavar="SITE", help="Attempt to heal a broken site URL")
     parser.add_argument("--stats", action="store_true", help="Show overall statistics")
     parser.add_argument("--migrate", action="store_true", help="Migrate data from JSON to SQLite")
+    parser.add_argument("--bot", action="store_true", help="Run the Telegram watchlist bot")
     
     args = parser.parse_args()
     oracle = OracleOrchestrator()
@@ -272,6 +288,9 @@ def main():
         oracle.action_stats()
     elif args.migrate:
         oracle.action_migrate()
+    elif args.bot:
+        from telegram_bot import main as run_telegram_bot
+        run_telegram_bot()
     elif args.add:
         oracle.action_add(args.add[0], args.add[1])
     elif args.remove:

@@ -54,16 +54,13 @@ class MangaStreamTemplate(BaseScraper):
                     chapter_link = latest_ch_tag.get('href', self.base_url)
                     ch_text = latest_ch_tag.get_text(separator=" ", strip=True)
                     
-                    match = re.search(r'(?:Chapter|Ch\.)?\s*(\d+(?:\.\d+)?)', ch_text, re.IGNORECASE)
-                    if match:
-                        current_ch = float(match.group(1))
-                        if current_ch.is_integer():
-                            current_ch = int(current_ch)
+                    current_ch = self.parse_chapter(ch_text)
+                    if current_ch is not None:
                             
                         updates.append({
                             "title": title,
                             "chapter": current_ch,
-                            "url": chapter_link,
+                            "url": self.absolute_url(chapter_link),
                             "site": self.site_name
                         })
                         seen.add(title)

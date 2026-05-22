@@ -23,18 +23,28 @@ class MangaPlusScraper(BaseScraper):
                 return []
                 
             data = response.json()
+            error = data.get("error")
+            if error:
+                subject = "API error"
+                if isinstance(error, dict):
+                    subject = error.get("englishPopup", {}).get("subject", subject)
+                logger.error(f"[{self.site_name}] API returned error: {subject}")
+                return []
             updates = []
             
             def find_titles(node):
                 if isinstance(node, dict):
-                    if "title" in node and "name" in node["title"]:
+                    if "title" in node and isinstance(node["title"], dict) and "name" in node["title"]:
                         title_info = node["title"]
                         title = title_info.get("name")
                         title_id = title_info.get("titleId")
+                        if not title or not title_id:
+                            return
+                        chapter = self.parse_chapter(title_info.get("chapterName") or title_info.get("latestChapterName")) or 0.0
                         
                         updates.append({
                             "title": title,
-                            "chapter": 0.0,
+                            "chapter": chapter,
                             "url": f"{self.base_url}titles/{title_id}",
                             "site": self.site_name
                         })
@@ -62,9 +72,12 @@ class MangaPlusScraper(BaseScraper):
     def test(self) -> bool:
         """Override test to ping the API directly."""
         try:
-            api_url = "https://mangaplus.shueisha.co.jp/api/title_list/updated"
+            api_url = "https://jumpg-webapi.tokyo-cdn.com/api/title_list/updated?format=json"
             self.rotate_user_agent()
             response = requests.get(api_url, headers=self.headers, timeout=10)
-            return response.status_code == 200
-        except:
+            if response.status_code != 200:
+                return False
+            data = response.json()
+            return not data.get("error")
+        except Exception:
             return False

@@ -10,10 +10,10 @@ Never miss a chapter release again. Track your favorite series across multiple s
 ## ✨ Features
 
 - 🔌 **Plugin Architecture:** Easily expandable with a `BaseScraper` class. Drop new site scrapers into the `scrapers/` folder.
-- 🌐 **Multi-Site Support:** Tracks 12 top manga/manhwa sources out-of-the-box (MangaDex, Asura, Webtoon, and more).
+- 🌐 **Multi-Site Support:** Tracks active manga/manhwa sources out-of-the-box (MangaDex, Asura, Webtoon, ManhuaPlus, and more). Blocked/dead scrapers are disabled by default.
 - 🧠 **Fuzzy Deduplication:** Intelligently tracks series even if they have slightly different names across sites.
 - 🚀 **Free & Direct:** No paid APIs required. Uses official free APIs (MangaDex, MangaPlus) and robust HTML scraping (Cloudflare bypassed).
-- 📲 **Telegram Integration:** Get daily digests grouped by site, or immediate notifications for new drops.
+- 📲 **Telegram Integration:** Get twice-daily digests grouped by site, with chapter links and Telegram watchlist buttons/commands.
 - 🛡️ **Graceful Fallbacks:** Isolated error handling ensures that if one site goes down, the orchestrator keeps scanning the rest.
 - ⏱️ **Respectful Scanning:** Rate limits and user-agent rotation built-in to prevent IP blocks.
 
@@ -26,15 +26,12 @@ Never miss a chapter release again. Track your favorite series across multiple s
 | **AsuraScans** | ✅ Working | Scraping (Cloudflare Bypass) |
 | **MangaDex** | ✅ Working | Official API |
 | **Webtoon** | ✅ Working | Scraping |
-| **Flame Scans** | ✅ Working | Scraping |
-| **Luminous Scans** | ✅ Working | Scraping |
-| **Void Scans** | ✅ Working | Scraping |
-| **Drake Scans** | ✅ Working | Scraping |
-| **Night Scans** | ✅ Working | Scraping |
-| **Omega Scans** | ✅ Working | Scraping |
 | **ManhuaPlus** | ✅ Working | Scraping |
-| **Manganato** | ✅ Working | Scraping |
-| **MangaPlus** | ✅ Working | Unofficial API |
+| **Leviatan Scans** | ⚠️ Disabled by default | Site timeout / blocked |
+| **MangaKakalot** | ⚠️ Disabled by default | Site timeout / blocked |
+| **Reaper Scans** | ⚠️ Disabled by default | Anti-bot page |
+| **Bato.to** | ⚠️ Disabled by default | Domain not serving manga index |
+| **MangaPlus** | ⚠️ Disabled by default | API may IP-ban non-browser clients |
 
 ---
 
@@ -64,8 +61,9 @@ Never miss a chapter release again. Track your favorite series across multiple s
 
 All core settings are easily modifiable in `config.py`.
 
-- **DIGEST_HOUR:** Sets the time (in 24-hour format) for the daily Telegram digest. Default is `21` (9:00 PM).
+- **DIGEST_HOURS:** Comma-separated 24-hour digest hours. Default is `6,18`, matching the included twice-a-day cron schedule.
 - **MAX_FAILURES_BEFORE_ALERT:** Number of consecutive full system failures before sending a Telegram emergency alert.
+- **DISABLED_SCRAPERS:** Comma-separated module names to skip. Defaults to known blocked/dead sources: `bato,leviatan,mangakakalot,mangaplus,reaper`. Override with an environment variable if a domain starts working again.
 
 ### Adding to Watchlist
 You can add specific series to track either on specific sites or "any" site (which fuzzy matches across all trackers).
@@ -121,16 +119,22 @@ The `oracle.py` script comes with powerful CLI commands:
   python oracle.py --search "Title"
   ```
 
+- **Run Telegram Bot:**
+  ```bash
+  python oracle.py --bot
+  ```
+  In Telegram, use `/latest` to see recent chapters with `Track this` and `Open chapter` buttons, `/watch Title | any` to add manually, `/unwatch Title` to remove, and `/watchlist` to view tracked titles.
+
 ---
 
 ## 🤖 Cron Setup Guide
 
-To automate Manhwa Oracle, set up a cron job to run the script periodically (e.g., every 30 minutes).
+To automate Manhwa Oracle, set up a cron job to run the script twice per day.
 
 1. Open crontab: `crontab -e`
 2. Add the following line:
    ```cron
-   */30 * * * * cd /path/to/manhwa-oracle && python oracle.py --run >> cron_log.txt 2>&1
+   0 6,18 * * * cd /path/to/manhwa-oracle && python oracle.py --run >> cron_log.txt 2>&1
    ```
 
 ---

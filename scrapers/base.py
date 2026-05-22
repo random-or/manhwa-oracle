@@ -1,6 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
-from typing import List, Dict, Union
+from typing import List, Dict, Optional, Union
+from urllib.parse import urljoin
 import cloudscraper
 from fake_useragent import UserAgent
 
@@ -23,11 +24,37 @@ class BaseScraper(ABC):
 
     def rotate_user_agent(self):
         """Sets realistic headers with a rotating user agent."""
+        try:
+            user_agent = ua.random
+        except Exception:
+            user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
         self.headers = {
-            "User-Agent": ua.random,
+            "User-Agent": user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.5",
         }
+
+    def absolute_url(self, href: str) -> str:
+        """Return an absolute URL for site-relative chapter links."""
+        return urljoin(self.base_url, href or "")
+
+    @staticmethod
+    def parse_chapter(value: object) -> Optional[Union[int, float]]:
+        """Parse a chapter value into int/float, returning None when unavailable."""
+        import re
+
+        if value is None:
+            return None
+        text = str(value).strip()
+        match = re.search(r'(?:chapter|ch\.?|episode|ep\.?)\s*(\d+(?:\.\d+)?)', text, re.IGNORECASE)
+        if not match:
+            match = re.fullmatch(r'\d+(?:\.\d+)?', text)
+        if not match:
+            return None
+        chapter_text = match.group(1) if match.lastindex else match.group(0)
+        chapter = float(chapter_text)
+        return int(chapter) if chapter.is_integer() else chapter
 
     @property
     @abstractmethod
@@ -68,7 +95,13 @@ class BaseScraper(ABC):
             self.rotate_user_agent()
             response = self.scraper.get(self.base_url, headers=self.headers, timeout=15)
             # Accept 200 OK or 403 (often cloudflare/bot protection but site is up)
-            return response.status_code in (200, 403)
+            if response.status_code == 403:
+                return True
+            if response.status_code != 200:
+                return False
+            lowered = response.text[:3000].lower()
+            blocked_markers = ("522: connection timed out", "account banned", "fingerprintjs", "domain parking")
+            return not any(marker in lowered for marker in blocked_markers)
         except Exception as e:
             logger.error(f"[{self.site_name}] Connection test failed: {e}")
             return False

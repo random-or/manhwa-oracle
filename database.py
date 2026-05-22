@@ -1,7 +1,7 @@
-import os
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
+from pathlib import Path
 
 Base = declarative_base()
 
@@ -43,7 +43,10 @@ class HealingHistory(Base):
     new_url = Column(String, nullable=False)
     healed_at = Column(DateTime, default=datetime.utcnow)
 
-engine = create_engine('sqlite:///oracle.db')
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / 'oracle.db'
+
+engine = create_engine(f'sqlite:///{DB_PATH}')
 SessionLocal = sessionmaker(bind=engine)
 
 def init_db():

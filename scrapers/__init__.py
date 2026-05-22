@@ -3,6 +3,7 @@ import importlib
 import inspect
 import logging
 from typing import List, Type
+from config import config
 from .base import BaseScraper
 
 logger = logging.getLogger("Scraper")
@@ -17,7 +18,11 @@ def load_scrapers() -> List[BaseScraper]:
     
     for filename in os.listdir(current_dir):
         if filename.endswith(".py") and filename not in ("__init__.py", "base.py", "mangastream_template.py"):
-            module_name = f"scrapers.{filename[:-3]}"
+            plugin_name = filename[:-3]
+            if plugin_name.lower() in config.DISABLED_SCRAPERS:
+                logger.info(f"Skipping disabled scraper plugin: {filename}")
+                continue
+            module_name = f"scrapers.{plugin_name}"
             try:
                 module = importlib.import_module(module_name)
                 for name, obj in inspect.getmembers(module, inspect.isclass):

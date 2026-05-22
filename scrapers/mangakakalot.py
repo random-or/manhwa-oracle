@@ -17,7 +17,9 @@ class MangaKakalotScraper(BaseScraper):
         try:
             self.rotate_user_agent()
             response = self.scraper.get(self.base_url, headers=self.headers, timeout=25)
-            return response.status_code in (200, 403, 522, 503)
+            if response.status_code != 200:
+                return False
+            return "522: connection timed out" not in response.text[:3000].lower()
         except Exception as e:
             logger.error(f"[{self.site_name}] Connection test failed: {e}")
             return False
@@ -52,16 +54,13 @@ class MangaKakalotScraper(BaseScraper):
                     chapter_link = latest_ch_tag.get('href', self.base_url)
                     ch_text = latest_ch_tag.get_text(strip=True)
                     
-                    match = re.search(r'Chapter\s*(\d+(?:\.\d+)?)', ch_text, re.IGNORECASE)
-                    if match:
-                        current_ch = float(match.group(1))
-                        if current_ch.is_integer():
-                            current_ch = int(current_ch)
+                    current_ch = self.parse_chapter(ch_text)
+                    if current_ch is not None:
                             
                         updates.append({
                             "title": title,
                             "chapter": current_ch,
-                            "url": chapter_link,
+                            "url": self.absolute_url(chapter_link),
                             "site": self.site_name
                         })
                 except Exception as e:

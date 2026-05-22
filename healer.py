@@ -10,6 +10,9 @@ logger = logging.getLogger("Oracle")
 class SiteHealer:
     def __init__(self):
         self.session = SessionLocal()
+
+    def close(self):
+        self.session.close()
         
     def _update_scraper_file(self, site_name: str, old_url: str, new_url: str):
         # Find the scraper file
