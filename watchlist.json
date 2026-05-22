@@ -1,4 +1,8 @@
-[
-  "The Novel’s Extra",
-  "Trash of the Count’s Family"
-]
+{
+    "watching": [
+        "Solo Leveling",
+        "Omniscient Reader's Viewpoint",
+        "Tower of God"
+    ],
+    "notify_all": false
+}

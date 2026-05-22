@@ -1,3 +1,8 @@
 requests
 beautifulsoup4
 python-dotenv
+pyTelegramBotAPI
+cloudscraper
+thefuzz[speedup]
+fake-useragent
+sqlalchemy

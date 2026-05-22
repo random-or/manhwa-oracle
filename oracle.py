@@ -1,14 +1,14 @@
-import requests
-import re
-import json
-import os
+import argparse
 import time
+import random
 import logging
 from datetime import datetime
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+from config import config
+from memory import MemoryManager
+from notifier import TelegramNotifier
+from scrapers import SCRAPERS
 
-# --- 1. LOGGING SETUP ---
+# --- LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -19,170 +19,267 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Oracle")
 
-# --- 2. SETUP & SECRETS ---
-load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+class OracleOrchestrator:
+    def __init__(self):
+        self.memory = MemoryManager()
+        self.notifier = TelegramNotifier()
 
-# Configuration
-TARGET_URL = "https://asurascans.com/"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-MEMORY_FILE = "memory.json"
-WATCHLIST_FILE = "watchlist.json"
-STATE_FILE = "state.json"
-QUEUE_FILE = "queue.json"
-
-# --- 3. THE MESSENGER ---
-def send_telegram(message):
-    """Sends a notification to your phone via Telegram."""
-    if not BOT_TOKEN or not CHAT_ID:
-        logger.error("BOT_TOKEN or CHAT_ID missing from .env!")
-        return
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": False
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        response.raise_for_status()
-    except Exception as e:
-        logger.warning(f"Telegram Send Failed: {e}")
-
-# --- 4. STATE HELPERS ---
-def load_json(file_path, default):
-    if os.path.exists(file_path):
-        try:
-            with open(file_path, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            logger.error(f"File {file_path} corrupted.")
-    return default
-
-def save_json(file_path, data):
-    with open(file_path, "w") as f:
-        json.dump(data, f, indent=4)
-
-# --- 5. THE ENGINE ---
-def run_oracle():
-    # Load Data
-    history = load_json(MEMORY_FILE, {})
-    watchlist = load_json(WATCHLIST_FILE, [])
-    state = load_json(STATE_FILE, {"fail_count": 0, "last_summary_date": ""})
-    queue = load_json(QUEUE_FILE, [])
-
-    logger.info("--- ORACLE IS SCANNING THE HOMEPAGE ---")
-
-    # --- RETRY LOGIC (Dead Man Switch) ---
-    max_retries = 3
-    retry_delay = 5
-    response = None
-
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Attempting to reach the tower (Try {attempt + 1}/{max_retries})...")
-            response = requests.get(TARGET_URL, headers=HEADERS, timeout=15)
-            if response.status_code == 200:
-                logger.info("Connection Successful!")
-                state["fail_count"] = 0 # Reset on success
-                break
-        except Exception as e:
-            logger.warning(f"Connection flicker: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-
-    # If connection failed after all retries in this run
-    if not response or response.status_code != 200:
-        state["fail_count"] += 1
-        logger.error(f"Oracle failed to reach the server. Fail count: {state['fail_count']}")
+    def action_test(self):
+        """Tests all site connections."""
+        print("\n🧪 Testing Scraper Connections...")
+        print("================================")
+        all_passed = True
         
-        if state["fail_count"] >= 3:
-            logger.error("DEAD MAN SWITCH TRIGGERED!")
-            send_telegram("⚠️ <b>SYSTEM ALERT</b>\nThe Manhwa Oracle has failed to connect 3 times in a row. The bot might be down or Asura Scans is blocking us.")
-        
-        save_json(STATE_FILE, state)
-        return
-
-    # --- DATA EXTRACTION ---
-    soup = BeautifulSoup(response.text, "html.parser")
-    titles = soup.find_all('a', class_=re.compile(r'font-bold.*text-base'))
-    logger.info(f"Detected {len(titles)} series on the homepage.")
-    
-    new_updates_count = 0
-    
-    for title_tag in titles:
-        try:
-            title = title_tag.get_text(strip=True)
-            
-            # Whitelist filter
-            if os.path.exists(WATCHLIST_FILE) and title not in watchlist:
-                continue
-            
-            chapters_div = title_tag.find_next_sibling('div')
-            if not chapters_div: continue
+        for scraper in SCRAPERS:
+            print(f"Testing {scraper.site_name}...", end=" ", flush=True)
+            if scraper.test():
+                print("✅ PASS")
+            else:
+                print("❌ FAIL")
+                all_passed = False
                 
-            latest_ch_tag = chapters_div.find('a')
-            if not latest_ch_tag: continue
-                
-            chapter_link = latest_ch_tag.get('href', TARGET_URL)
-            ch_text = latest_ch_tag.get_text(separator=" ", strip=True)
-            match = re.search(r'Chapter\s*(\d+)', ch_text)
-            
-            if match:
-                current_ch = int(match.group(1))
-                last_seen = int(history.get(title, 0))
-                
-                if current_ch > last_seen:
-                    # Queue the update instead of sending immediately
-                    update_entry = {
-                        "title": title,
-                        "chapter": current_ch,
-                        "link": chapter_link,
-                        "is_new": last_seen == 0
-                    }
-                    queue.append(update_entry)
-                    
-                    logger.info(f"QUEUED: {title} Ch.{current_ch}")
-                    history[title] = current_ch
-                    new_updates_count += 1
-        except Exception as item_err:
-            logger.debug(f"Skipping item: {item_err}")
-            continue
-
-    # --- DAILY SUMMARY LOGIC (9 PM) ---
-    now = datetime.now()
-    today_str = now.strftime("%Y-%m-%d")
-    
-    # Check if it's 9 PM (hour 21) and we haven't sent a summary today
-    if now.hour == 21 and state.get("last_summary_date") != today_str:
-        if queue:
-            msg = "📅 <b>DAILY MANHWA SUMMARY</b>\n"
-            msg += "----------------------------\n"
-            for item in queue:
-                icon = "🌟" if item["is_new"] else "🔥"
-                msg += f"{icon} <b>{item['title']}</b> - Ch. {item['chapter']}\n"
-                msg += f"🔗 <a href='{item['link']}'>Read Now</a>\n\n"
-            
-            send_telegram(msg)
-            logger.info(f"Summary sent with {len(queue)} updates.")
-            queue = [] # Clear queue after sending
+        print("================================")
+        if all_passed:
+            print("🎉 All systems are operational!")
         else:
-            logger.info("9 PM reached but queue is empty. No summary sent.")
-        
-        state["last_summary_date"] = today_str
+            print("⚠️ Some scrapers failed. Check logs for details.")
 
-    if new_updates_count == 0:
-        logger.info("No new updates found this run.")
+    def action_sites(self):
+        """Lists all available sites."""
+        print("\n🌐 Supported Sites:")
+        print("===================")
+        for scraper in SCRAPERS:
+            print(f"- {scraper.site_name}")
             
-    # Save everything
-    save_json(MEMORY_FILE, history)
-    save_json(STATE_FILE, state)
-    save_json(QUEUE_FILE, queue)
+    def action_status(self):
+        """Shows all tracked series."""
+        watching = self.memory.watchlist.get("watching", [])
+        notify_all = self.memory.watchlist.get("notify_all", False)
+        
+        print("\n📊 Oracle Status Report")
+        print("=========================")
+        print(f"Mode: {'Notify All' if notify_all else 'Watchlist Only'}")
+        print(f"Tracking {len(watching)} series explicitly.\n")
+        
+        if not watching and not notify_all:
+            print("Your watchlist is empty and notify_all is false.")
+            return
+            
+        for item in watching:
+            site = item.get("site", "any")
+            title = item.get("title", "Unknown")
+            ch = self.memory.get_last_seen_chapter(site, title) if site != "any" else "Variable"
+            print(f"📖 {title} ({site}) -> Ch. {ch}")
 
-    logger.info("--- SCAN COMPLETE ---")
+    def action_add(self, title: str, site: str):
+        """Adds a series to the watchlist."""
+        if self.memory.add_to_watchlist(site, title):
+            print(f"✅ Added '{title}' on '{site}' to watchlist.")
+        else:
+            print(f"⚠️ '{title}' on '{site}' is already in your watchlist.")
+
+    def action_remove(self, title: str):
+        """Removes a series from the watchlist."""
+        if self.memory.remove_from_watchlist(title):
+            print(f"🗑️ Removed '{title}' from watchlist.")
+        else:
+            print(f"⚠️ '{title}' is not in your watchlist.")
+
+    def action_search(self, title: str):
+        """Searches all sites. (Not fully implemented for all in BaseScraper, but skeleton provided)"""
+        print(f"🔍 Searching for '{title}' across all sites is not fully supported yet.")
+        print("Please check individual sites directly.")
+
+    def action_history(self, title: str):
+        """Shows chapter history for a series."""
+        from database import SessionLocal, ChapterHistory
+        session = SessionLocal()
+        history = session.query(ChapterHistory).filter_by(series_title=title).order_by(ChapterHistory.read_at.desc()).limit(10).all()
+        if not history:
+            print(f"No history found for '{title}'.")
+            return
+        print(f"\n📖 History for '{title}':")
+        for h in history:
+            print(f"  - Ch. {h.chapter} on {h.site} ({h.read_at.strftime('%Y-%m-%d %H:%M')})")
+
+    def action_site_status(self):
+        """Shows status of all sites."""
+        from database import SessionLocal, SiteStatus
+        session = SessionLocal()
+        statuses = session.query(SiteStatus).all()
+        print("\n🌐 Site Statuses:")
+        if not statuses:
+            print("  No site statuses recorded yet.")
+        for s in statuses:
+            print(f"  - {s.site_name}: {s.status} (Last Checked: {s.last_checked.strftime('%Y-%m-%d %H:%M')})")
+
+    def action_heal(self, site: str):
+        """Attempts to manually heal a site."""
+        from healer import SiteHealer
+        healer = SiteHealer()
+        scraper = next((s for s in SCRAPERS if s.site_name.lower() == site.lower()), None)
+        if not scraper:
+            print(f"Scraper for '{site}' not found.")
+            return
+        print(f"Attempting to heal {scraper.site_name}...")
+        new_url = healer.heal(scraper.site_name, scraper.base_url)
+        if new_url:
+            print(f"✅ Successfully healed! New URL: {new_url}")
+        else:
+            print(f"❌ Failed to heal {scraper.site_name}.")
+
+    def action_stats(self):
+        """Shows overall statistics."""
+        from database import SessionLocal, Series, ChapterHistory
+        session = SessionLocal()
+        total_series = session.query(Series).count()
+        total_chapters = session.query(ChapterHistory).count()
+        print("\n📈 Oracle Statistics:")
+        print(f"  - Total Series Tracked: {total_series}")
+        print(f"  - Total Chapters Read: {total_chapters}")
+
+    def action_migrate(self):
+        """Migrates data from JSON to SQLite."""
+        self.memory.migrate_from_json()
+        print("Migration complete!")
+
+    def run_oracle(self):
+        """Main scanning routine."""
+        logger.info("--- ORACLE IS SCANNING ---")
+        
+        total_failures = 0
+        new_updates_count = 0
+        
+        from healer import SiteHealer
+        from database import SessionLocal, SiteStatus
+        healer = SiteHealer()
+        session = SessionLocal()
+        
+        for i, scraper in enumerate(SCRAPERS):
+            logger.info(f"Checking {scraper.site_name}...")
+            
+            # Update last_checked for the site
+            status = session.query(SiteStatus).filter_by(site_name=scraper.site_name).first()
+            if not status:
+                status = SiteStatus(site_name=scraper.site_name, status="ACTIVE")
+                session.add(status)
+            else:
+                status.last_checked = datetime.utcnow()
+            session.commit()
+
+            updates = scraper.get_latest_chapters()
+            
+            if not updates:
+                logger.warning(f"No updates found or failed to fetch for {scraper.site_name}.")
+                total_failures += 1
+                
+                # Check if it was a connection error by running test()
+                if not scraper.test():
+                    logger.warning(f"Site {scraper.site_name} appears down. Initiating self-healing...")
+                    new_url = healer.heal(scraper.site_name, scraper.base_url)
+                    if new_url:
+                        self.notifier.send_message(f"🔧 <b>Healer</b>\nAutomatically updated {scraper.site_name} to {new_url}")
+                    else:
+                        healer.mark_dead(scraper.site_name)
+                        self.notifier.send_message(f"💀 <b>Healer</b>\n{scraper.site_name} is marked as DEAD.")
+            else:
+                for item in updates:
+                    title = item["title"]
+                    site = item["site"]
+                    current_ch = item["chapter"]
+                    
+                    if not self.memory.is_watched(site, title):
+                        continue
+                        
+                    last_seen = self.memory.get_last_seen_chapter(site, title)
+                    
+                    if current_ch > last_seen:
+                        item["is_new"] = (last_seen == 0.0)
+                        self.memory.queue.append(item)
+                        logger.info(f"QUEUED: {title} Ch.{current_ch} from {site}")
+                        self.memory.update_last_seen_chapter(site, title, current_ch)
+                        new_updates_count += 1
+            
+            # Rate limiting between sites
+            if i < len(SCRAPERS) - 1:
+                delay = random.uniform(2.0, 3.5)
+                logger.debug(f"Sleeping for {delay:.2f}s before next site...")
+                time.sleep(delay)
+
+        # Dead man switch
+        if total_failures == len(SCRAPERS) and len(SCRAPERS) > 0:
+            self.memory.state["fail_count"] += 1
+            logger.error(f"Oracle failed to fetch updates from ALL sites. Fail count: {self.memory.state['fail_count']}")
+            
+            if self.memory.state["fail_count"] >= config.MAX_FAILURES_BEFORE_ALERT:
+                logger.error("DEAD MAN SWITCH TRIGGERED!")
+                self.notifier.send_message("⚠️ <b>SYSTEM ALERT</b>\nThe Manhwa Oracle has failed on ALL sites consecutively. Scrapers might be blocked.")
+        else:
+            self.memory.state["fail_count"] = 0
+
+        # Daily Summary Logic
+        now = datetime.now()
+        today_str = now.strftime("%Y-%m-%d")
+        
+        if now.hour == config.DIGEST_HOUR and self.memory.state.get("last_summary_date") != today_str:
+            if self.memory.queue:
+                self.notifier.send_daily_digest(self.memory.queue)
+                logger.info(f"Digest sent with {len(self.memory.queue)} updates.")
+                self.memory.queue = [] # Clear queue after sending
+            else:
+                logger.info("Digest time reached but queue is empty.")
+                
+            self.memory.state["last_summary_date"] = today_str
+
+        if new_updates_count == 0:
+            logger.info("No new updates found this run.")
+            
+        # Save all states
+        self.memory.save_all()
+        logger.info("--- SCAN COMPLETE ---")
+
+def main():
+    parser = argparse.ArgumentParser(description="🔮 Manhwa Oracle - Multi-Site Tracker")
+    parser.add_argument("--run", action="store_true", help="Run the orchestrator to check all sites")
+    parser.add_argument("--test", action="store_true", help="Test all site connections")
+    parser.add_argument("--add", nargs=2, metavar=("TITLE", "SITE"), help="Add a series to watchlist (e.g. 'Solo Leveling' 'any')")
+    parser.add_argument("--remove", type=str, metavar="TITLE", help="Remove a series from watchlist")
+    parser.add_argument("--search", type=str, metavar="TITLE", help="Search for a manhwa by name")
+    parser.add_argument("--status", action="store_true", help="Show all tracked series")
+    parser.add_argument("--sites", action="store_true", help="List all available sites")
+    parser.add_argument("--history", type=str, metavar="TITLE", help="Show chapter history for a series")
+    parser.add_argument("--site-status", action="store_true", help="Show status of all sites")
+    parser.add_argument("--heal", type=str, metavar="SITE", help="Attempt to heal a broken site URL")
+    parser.add_argument("--stats", action="store_true", help="Show overall statistics")
+    parser.add_argument("--migrate", action="store_true", help="Migrate data from JSON to SQLite")
+    
+    args = parser.parse_args()
+    oracle = OracleOrchestrator()
+    
+    if args.test:
+        oracle.action_test()
+    elif args.sites:
+        oracle.action_sites()
+    elif args.status:
+        oracle.action_status()
+    elif args.history:
+        oracle.action_history(args.history)
+    elif args.site_status:
+        oracle.action_site_status()
+    elif args.heal:
+        oracle.action_heal(args.heal)
+    elif args.stats:
+        oracle.action_stats()
+    elif args.migrate:
+        oracle.action_migrate()
+    elif args.add:
+        oracle.action_add(args.add[0], args.add[1])
+    elif args.remove:
+        oracle.action_remove(args.remove)
+    elif args.search:
+        oracle.action_search(args.search)
+    elif args.run or not any(vars(args).values()):
+        oracle.run_oracle()
 
 if __name__ == "__main__":
-    run_oracle()
+    main()

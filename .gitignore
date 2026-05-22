@@ -1,7 +1,48 @@
+# Environments
 .env
-__pycache__/
+.venv
 env/
-env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project files
+*.db
+memory.json
+watchlist.json
+state.json
+queue.json
+cron_log.txt
+
+# Python
 __pycache__/
-*.pyc
-.env
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
