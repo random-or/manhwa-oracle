@@ -4,6 +4,7 @@ import json
 import os
 import time
 import logging
+from datetime import datetime
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
@@ -27,6 +28,9 @@ CHAT_ID = os.getenv("CHAT_ID")
 TARGET_URL = "https://asurascans.com/"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 MEMORY_FILE = "memory.json"
+WATCHLIST_FILE = "watchlist.json"
+STATE_FILE = "state.json"
+QUEUE_FILE = "queue.json"
 
 # --- 3. THE MESSENGER ---
 def send_telegram(message):
@@ -36,29 +40,43 @@ def send_telegram(message):
         return
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False
+    }
     try:
         response = requests.post(url, json=payload, timeout=10)
         response.raise_for_status()
     except Exception as e:
         logger.warning(f"Telegram Send Failed: {e}")
 
-# --- 4. THE ENGINE ---
-def run_oracle():
-    # Load Memory
-    if os.path.exists(MEMORY_FILE):
+# --- 4. STATE HELPERS ---
+def load_json(file_path, default):
+    if os.path.exists(file_path):
         try:
-            with open(MEMORY_FILE, "r") as f:
-                history = json.load(f)
+            with open(file_path, "r") as f:
+                return json.load(f)
         except json.JSONDecodeError:
-            logger.error("Memory file corrupted. Resetting.")
-            history = {}
-    else:
-        history = {}
+            logger.error(f"File {file_path} corrupted.")
+    return default
+
+def save_json(file_path, data):
+    with open(file_path, "w") as f:
+        json.dump(data, f, indent=4)
+
+# --- 5. THE ENGINE ---
+def run_oracle():
+    # Load Data
+    history = load_json(MEMORY_FILE, {})
+    watchlist = load_json(WATCHLIST_FILE, [])
+    state = load_json(STATE_FILE, {"fail_count": 0, "last_summary_date": ""})
+    queue = load_json(QUEUE_FILE, [])
 
     logger.info("--- ORACLE IS SCANNING THE HOMEPAGE ---")
 
-    # --- RETRY LOGIC ---
+    # --- RETRY LOGIC (Dead Man Switch) ---
     max_retries = 3
     retry_delay = 5
     response = None
@@ -69,20 +87,27 @@ def run_oracle():
             response = requests.get(TARGET_URL, headers=HEADERS, timeout=15)
             if response.status_code == 200:
                 logger.info("Connection Successful!")
+                state["fail_count"] = 0 # Reset on success
                 break
         except Exception as e:
             logger.warning(f"Connection flicker: {e}")
             if attempt < max_retries - 1:
                 time.sleep(retry_delay)
 
+    # If connection failed after all retries in this run
     if not response or response.status_code != 200:
-        logger.error(f"Oracle failed to reach the server. Status: {response.status_code if response else 'No Response'}")
+        state["fail_count"] += 1
+        logger.error(f"Oracle failed to reach the server. Fail count: {state['fail_count']}")
+        
+        if state["fail_count"] >= 3:
+            logger.error("DEAD MAN SWITCH TRIGGERED!")
+            send_telegram("⚠️ <b>SYSTEM ALERT</b>\nThe Manhwa Oracle has failed to connect 3 times in a row. The bot might be down or Asura Scans is blocking us.")
+        
+        save_json(STATE_FILE, state)
         return
 
-    # --- DATA EXTRACTION (Updated with Scout V3 logic) ---
+    # --- DATA EXTRACTION ---
     soup = BeautifulSoup(response.text, "html.parser")
-    
-    # Scout V3 Logic: Find titles with specific Tailwind classes
     titles = soup.find_all('a', class_=re.compile(r'font-bold.*text-base'))
     logger.info(f"Detected {len(titles)} series on the homepage.")
     
@@ -92,15 +117,17 @@ def run_oracle():
         try:
             title = title_tag.get_text(strip=True)
             
-            # Find the chapter div (next sibling)
-            chapters_div = title_tag.find_next_sibling('div')
-            if not chapters_div:
+            # Whitelist filter
+            if os.path.exists(WATCHLIST_FILE) and title not in watchlist:
                 continue
+            
+            chapters_div = title_tag.find_next_sibling('div')
+            if not chapters_div: continue
                 
             latest_ch_tag = chapters_div.find('a')
-            if not latest_ch_tag:
-                continue
+            if not latest_ch_tag: continue
                 
+            chapter_link = latest_ch_tag.get('href', TARGET_URL)
             ch_text = latest_ch_tag.get_text(separator=" ", strip=True)
             match = re.search(r'Chapter\s*(\d+)', ch_text)
             
@@ -109,25 +136,51 @@ def run_oracle():
                 last_seen = int(history.get(title, 0))
                 
                 if current_ch > last_seen:
-                    if last_seen == 0:
-                        msg = f"🌟 NEW SERIES TRACKED!\n{title}\nStarting at Chapter {current_ch}"
-                    else:
-                        msg = f"🔥 NEW CHAPTER!\n{title}\nNow at Chapter {current_ch}"
+                    # Queue the update instead of sending immediately
+                    update_entry = {
+                        "title": title,
+                        "chapter": current_ch,
+                        "link": chapter_link,
+                        "is_new": last_seen == 0
+                    }
+                    queue.append(update_entry)
                     
-                    logger.info(f"PING: {title} Ch.{current_ch}")
-                    send_telegram(msg)
+                    logger.info(f"QUEUED: {title} Ch.{current_ch}")
                     history[title] = current_ch
                     new_updates_count += 1
         except Exception as item_err:
-            logger.debug(f"Skipping item due to error: {item_err}")
+            logger.debug(f"Skipping item: {item_err}")
             continue
 
-    if new_updates_count == 0:
-        logger.info("Everything is up to date.")
+    # --- DAILY SUMMARY LOGIC (9 PM) ---
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    
+    # Check if it's 9 PM (hour 21) and we haven't sent a summary today
+    if now.hour == 21 and state.get("last_summary_date") != today_str:
+        if queue:
+            msg = "📅 <b>DAILY MANHWA SUMMARY</b>\n"
+            msg += "----------------------------\n"
+            for item in queue:
+                icon = "🌟" if item["is_new"] else "🔥"
+                msg += f"{icon} <b>{item['title']}</b> - Ch. {item['chapter']}\n"
+                msg += f"🔗 <a href='{item['link']}'>Read Now</a>\n\n"
             
-    # Save Memory
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(history, f, indent=4)
+            send_telegram(msg)
+            logger.info(f"Summary sent with {len(queue)} updates.")
+            queue = [] # Clear queue after sending
+        else:
+            logger.info("9 PM reached but queue is empty. No summary sent.")
+        
+        state["last_summary_date"] = today_str
+
+    if new_updates_count == 0:
+        logger.info("No new updates found this run.")
+            
+    # Save everything
+    save_json(MEMORY_FILE, history)
+    save_json(STATE_FILE, state)
+    save_json(QUEUE_FILE, queue)
 
     logger.info("--- SCAN COMPLETE ---")
 

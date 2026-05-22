@@ -4,11 +4,12 @@ A robust, automated scraper designed to monitor [Asura Scans](https://asurascans
 
 ## 🚀 Features
 
-- **Real-time Monitoring**: Scans the homepage for the latest updates.
-- **Smart Tracking**: Remembers the last chapter you saw to avoid duplicate pings.
+- **Whitelist System**: Only get notified for series you care about via `watchlist.json`.
+- **Daily Summary**: At 9 PM, receive a single combined message of all updates found during the day.
+- **Dead Man Switch**: Receive a notification if the script fails to connect 3 times in a row.
+- **Rich Notifications**: Clean Telegram messages with bold titles and direct links to chapters.
 - **Tailwind-Resistant**: Uses advanced selector logic to stay functional even when site CSS changes.
 - **Automated Logging**: Detailed logs in `cron_log.txt` for monitoring health and activity.
-- **Reliable**: Built-in retry logic to handle network flickers and unstable connections.
 
 ## 🛠️ Installation
 
@@ -39,6 +40,14 @@ pip install -r requirements.txt
    - **`BOT_TOKEN`**: Obtain this by creating a bot through [@BotFather](https://t.me/BotFather).
    - **`CHAT_ID`**: Find your unique ID by messaging [@userinfobot](https://t.me/userinfobot).
 
+3. **Whitelist**: Add the exact titles of manhwa you want to track to `watchlist.json`:
+   ```json
+   [
+     "The Novel’s Extra",
+     "Dungeon Odyssey"
+   ]
+   ```
+
 ## 🏃 Usage
 
 Run the Oracle manually:
@@ -55,10 +64,12 @@ To run the Oracle every 30 minutes, add this to your crontab (`crontab -e`):
 ## 📁 Project Structure
 
 - `oracle.py`: The main automation engine.
-- `memory.json`: Local database for tracking chapter history.
+- `memory.json`: Tracks the last seen chapter for each series.
+- `watchlist.json`: Your list of followed manhwa.
+- `state.json`: Tracks failure counts and summary dates.
+- `queue.json`: Stores updates for the daily summary.
 - `cron_log.txt`: Execution logs.
 - `requirements.txt`: Python dependencies.
-- `.env`: (Private) Your secret credentials.
 
 ## 📝 License
 MIT
