@@ -4,7 +4,8 @@ from thefuzz import fuzz
 from config import config
 import json
 import os
-from database import init_db, SessionLocal, Series, Watchlist, ChapterHistory, SiteStatus, HealingHistory
+from sqlalchemy import func
+from database import init_db, SessionLocal, Series, Watchlist, Wishlist, ChapterHistory, SiteStatus, HealingHistory
 
 logger = logging.getLogger("Oracle")
 
@@ -85,13 +86,46 @@ class MemoryManager:
         return True
 
     def remove_from_watchlist(self, title: str) -> bool:
-        items = self.session.query(Watchlist).filter_by(title=title).all()
+        items = self.session.query(Watchlist).filter(func.lower(Watchlist.title) == title.lower()).all()
         if not items:
             return False
         for item in items:
             self.session.delete(item)
         self.session.commit()
         return True
+
+    def add_to_wishlist(self, title: str, site: str = "any", note: str = "") -> bool:
+        existing = self.session.query(Wishlist).filter_by(site=site, title=title).first()
+        if existing:
+            if note and existing.note != note:
+                existing.note = note
+                self.session.commit()
+            return False
+        item = Wishlist(site=site, title=title, note=note)
+        self.session.add(item)
+        self.session.commit()
+        return True
+
+    def remove_from_wishlist(self, title: str) -> bool:
+        items = self.session.query(Wishlist).filter(func.lower(Wishlist.title) == title.lower()).all()
+        if not items:
+            return False
+        for item in items:
+            self.session.delete(item)
+        self.session.commit()
+        return True
+
+    def list_wishlist(self) -> List[Dict[str, str]]:
+        items = self.session.query(Wishlist).order_by(Wishlist.added_at.desc()).all()
+        return [{"site": item.site, "title": item.title, "note": item.note or ""} for item in items]
+
+    def promote_wishlist_to_watchlist(self, title: str, site: str = "any") -> bool:
+        wishlist_items = self.session.query(Wishlist).filter(func.lower(Wishlist.title) == title.lower()).all()
+        added = self.add_to_watchlist(site, title)
+        for item in wishlist_items:
+            self.session.delete(item)
+        self.session.commit()
+        return added
 
     def migrate_from_json(self):
         """Migrates data from memory.json and watchlist.json to SQLite."""

@@ -32,14 +32,12 @@ class Config:
         if hour.strip()
     }
 
-    # Scrapers currently blocked/dead from this runtime are skipped by default
-    # so normal tests and scans only use sources that can return usable updates.
+    # Optional comma-separated scraper module names to skip at runtime.
+    # Broken/dead scrapers were removed from the codebase; keep this for quick
+    # temporary disabling if a working site starts blocking requests later.
     DISABLED_SCRAPERS: set[str] = {
         name.strip().lower()
-        for name in os.getenv(
-            "DISABLED_SCRAPERS",
-            "bato,leviatan,mangakakalot,mangaplus,reaper",
-        ).split(",")
+        for name in os.getenv("DISABLED_SCRAPERS", "").split(",")
         if name.strip()
     }
 

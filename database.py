@@ -20,6 +20,14 @@ class Watchlist(Base):
     site = Column(String, default="any")
     added_at = Column(DateTime, default=datetime.utcnow)
 
+class Wishlist(Base):
+    __tablename__ = 'wishlist'
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    site = Column(String, default="any")
+    note = Column(String, default="")
+    added_at = Column(DateTime, default=datetime.utcnow)
+
 class ChapterHistory(Base):
     __tablename__ = 'chapter_history'
     id = Column(Integer, primary_key=True)

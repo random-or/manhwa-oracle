@@ -19,6 +19,7 @@ class AsuraScraper(BaseScraper):
             if response.status_code != 200:
                 logger.error(f"[{self.site_name}] Failed to reach homepage: HTTP {response.status_code}")
                 return []
+            response.encoding = response.apparent_encoding or response.encoding
             
             soup = BeautifulSoup(response.text, "html.parser")
             titles = soup.find_all('a', class_=re.compile(r'font-bold.*text-base|text-\[15px\]'))

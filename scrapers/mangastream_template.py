@@ -27,6 +27,7 @@ class MangaStreamTemplate(BaseScraper):
             if response.status_code != 200:
                 logger.error(f"[{self.site_name}] HTTP {response.status_code}")
                 return []
+            response.encoding = response.apparent_encoding or response.encoding
             
             soup = BeautifulSoup(response.text, "html.parser")
             

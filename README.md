@@ -10,10 +10,10 @@ Never miss a chapter release again. Track your favorite series across multiple s
 ## ✨ Features
 
 - 🔌 **Plugin Architecture:** Easily expandable with a `BaseScraper` class. Drop new site scrapers into the `scrapers/` folder.
-- 🌐 **Multi-Site Support:** Tracks active manga/manhwa sources out-of-the-box (MangaDex, Asura, Webtoon, ManhuaPlus, and more). Blocked/dead scrapers are disabled by default.
+- 🌐 **Multi-Site Support:** Tracks only currently working manga/manhwa sources out-of-the-box (Asura, MangaDex, Webtoon, ManhuaPlus, Comix, Atsumaru).
 - 🧠 **Fuzzy Deduplication:** Intelligently tracks series even if they have slightly different names across sites.
-- 🚀 **Free & Direct:** No paid APIs required. Uses official free APIs (MangaDex, MangaPlus) and robust HTML scraping (Cloudflare bypassed).
-- 📲 **Telegram Integration:** Get twice-daily digests grouped by site, with chapter links and Telegram watchlist buttons/commands.
+- 🚀 **Free & Direct:** No paid APIs required. Uses public JSON endpoints where available and robust HTML scraping where needed.
+- 📲 **Telegram Integration:** Get twice-daily digests grouped by site, with chapter links, menu buttons, watchlist, wishlist, and status commands.
 - 🛡️ **Graceful Fallbacks:** Isolated error handling ensures that if one site goes down, the orchestrator keeps scanning the rest.
 - ⏱️ **Respectful Scanning:** Rate limits and user-agent rotation built-in to prevent IP blocks.
 
@@ -23,15 +23,14 @@ Never miss a chapter release again. Track your favorite series across multiple s
 
 | Site | Status | Type |
 |---|---|---|
-| **AsuraScans** | ✅ Working | Scraping (Cloudflare Bypass) |
+| **AsuraScans** | ✅ Working | Scraping (Cloudflare bypass) |
 | **MangaDex** | ✅ Working | Official API |
 | **Webtoon** | ✅ Working | Scraping |
 | **ManhuaPlus** | ✅ Working | Scraping |
-| **Leviatan Scans** | ⚠️ Disabled by default | Site timeout / blocked |
-| **MangaKakalot** | ⚠️ Disabled by default | Site timeout / blocked |
-| **Reaper Scans** | ⚠️ Disabled by default | Anti-bot page |
-| **Bato.to** | ⚠️ Disabled by default | Domain not serving manga index |
-| **MangaPlus** | ⚠️ Disabled by default | API may IP-ban non-browser clients |
+| **Comix** | ✅ Working | Public JSON API (`comix.to`) |
+| **Atsumaru** | ✅ Working | Public JSON/search API (`atsu.moe`) |
+
+Removed after verification: MangaPlus (account banned from API), MangaKakalot/Leviatan (timeouts), Reaper Scans (blocked), and Bato.to (reachable but no usable manga updates).
 
 ---
 
@@ -63,7 +62,7 @@ All core settings are easily modifiable in `config.py`.
 
 - **DIGEST_HOURS:** Comma-separated 24-hour digest hours. Default is `6,18`, matching the included twice-a-day cron schedule.
 - **MAX_FAILURES_BEFORE_ALERT:** Number of consecutive full system failures before sending a Telegram emergency alert.
-- **DISABLED_SCRAPERS:** Comma-separated module names to skip. Defaults to known blocked/dead sources: `bato,leviatan,mangakakalot,mangaplus,reaper`. Override with an environment variable if a domain starts working again.
+- **DISABLED_SCRAPERS:** Optional comma-separated module names to skip temporarily. Default is empty because broken/dead scrapers were removed after verification.
 
 ### Adding to Watchlist
 You can add specific series to track either on specific sites or "any" site (which fuzzy matches across all trackers).
@@ -123,7 +122,7 @@ The `oracle.py` script comes with powerful CLI commands:
   ```bash
   python oracle.py --bot
   ```
-  In Telegram, use `/latest` to see recent chapters with `Track this` and `Open chapter` buttons, `/watch Title | any` to add manually, `/unwatch Title` to remove, and `/watchlist` to view tracked titles.
+  In Telegram, use the menu buttons or commands: `/latest` for recent chapters with Track/Wishlist/Open buttons, `/watch Title | any` to track, `/wish Title | any | note` to save for later, `/watchlist` and `/wishlist` to manage items, `/sites` for active sources, and `/status` to check Telegram/config/scraper status.
 
 ---
 

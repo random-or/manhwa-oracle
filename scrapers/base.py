@@ -99,6 +99,7 @@ class BaseScraper(ABC):
                 return True
             if response.status_code != 200:
                 return False
+            response.encoding = response.apparent_encoding or response.encoding
             lowered = response.text[:3000].lower()
             blocked_markers = ("522: connection timed out", "account banned", "fingerprintjs", "domain parking")
             return not any(marker in lowered for marker in blocked_markers)
