@@ -34,9 +34,10 @@ class SiteHealer:
         logger.info(f"Attempting to heal {site_name} (Old URL: {old_url})")
         # Try different TLDs
         tlds = [".com", ".net", ".org", ".gg", ".to", ".cc", ".me", ".io"]
-        base_name = old_url.replace("https://", "").replace("http://", "").split(".")[0]
-        if "www." in base_name:
-            base_name = base_name.replace("www.", "")
+        base_domain = old_url.replace("https://", "").replace("http://", "").split("/")[0]
+        if base_domain.startswith("www."):
+            base_domain = base_domain[4:]
+        base_name = base_domain.split(".")[0]
             
         found_url = None
         for tld in tlds:
