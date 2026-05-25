@@ -1,162 +1,107 @@
 # 🔮 Manhwa Oracle
 
-![Banner](https://via.placeholder.com/1200x300.png?text=Manhwa+Oracle)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Telegram](https://img.shields.io/badge/Telegram-Bot-blue.svg)](https://core.telegram.org/bots)
 
-**The ultimate, plugin-based multi-site Manhwa/Manga scraper and Telegram notifier.**
-Never miss a chapter release again. Track your favorite series across multiple scanlation groups and official sources, all delivered straight to your phone.
+**The ultimate, plugin-based multi-site Manhwa/Manga tracker and Telegram notifier.**
 
----
-
-## ✨ Features
-
-- 🔌 **Plugin Architecture:** Easily expandable with a `BaseScraper` class. Drop new site scrapers into the `scrapers/` folder.
-- 🌐 **Multi-Site Support:** Tracks only currently working manga/manhwa sources out-of-the-box (Asura, MangaDex, Webtoon, ManhuaPlus, Comix, Atsumaru).
-- 🧠 **Fuzzy Deduplication:** Intelligently tracks series even if they have slightly different names across sites.
-- 🚀 **Free & Direct:** No paid APIs required. Uses public JSON endpoints where available and robust HTML scraping where needed.
-- 📲 **Telegram Integration:** Get twice-daily digests grouped by site, with chapter links, menu buttons, watchlist, wishlist, and status commands.
-- 🛡️ **Graceful Fallbacks:** Isolated error handling ensures that if one site goes down, the orchestrator keeps scanning the rest.
-- ⏱️ **Respectful Scanning:** Rate limits and user-agent rotation built-in to prevent IP blocks.
+Manhwa Oracle is a professional-grade automation tool designed to monitor your favorite series across multiple scanlation groups and official sources. When a new chapter drops, you get a clean, grouped notification directly on Telegram.
 
 ---
 
-## 📚 Supported Sites
+## ✨ Key Features
 
-| Site | Status | Type |
-|---|---|---|
-| **AsuraScans** | ✅ Working | Scraping (Cloudflare bypass) |
-| **MangaDex** | ✅ Working | Official API |
-| **Webtoon** | ✅ Working | Scraping |
-| **ManhuaPlus** | ✅ Working | Scraping |
-| **Comix** | ✅ Working | Public JSON API (`comix.to`) |
-| **Atsumaru** | ✅ Working | Public JSON/search API (`atsu.moe`) |
-
-Removed after verification: MangaPlus (account banned from API), MangaKakalot/Leviatan (timeouts), Reaper Scans (blocked), and Bato.to (reachable but no usable manga updates).
+- 🔌 **Plugin Architecture**: Highly modular design. Adding a new site is as simple as creating a new class in `scrapers/`.
+- 🧠 **Smart Tracking**: Fuzzy title matching ensures you don't miss updates even if sites use slightly different naming conventions.
+- 🛠️ **Self-Healing URLs**: Automatically detects when a site changes its domain and attempts to find the new one to keep your tracker alive.
+- 🗄️ **Robust SQLite Backend**: Moves beyond flat files to a reliable database for history, status tracking, and performance.
+- 📲 **Interactive Telegram Bot**: A full-featured bot to manage your watchlist, browse latest updates, and check system health.
+- 🛡️ **Graceful Resilience**: Isolated scrapers ensure that one failing site doesn't stop the rest of your notifications.
 
 ---
 
-## 🛠️ Installation
+## 🌐 Supported Trackers
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/manhwa-oracle.git
-   cd manhwa-oracle
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Configure the Environment:**
-   Copy the example environment file and add your Telegram bot token.
-   ```bash
-   cp .env.example .env
-   # Edit .env with your BOT_TOKEN and CHAT_ID
-   ```
+| Tracker | Status | Method |
+| :--- | :--- | :--- |
+| **AsuraScans** | ✅ Active | HTML Scraping |
+| **MangaDex** | ✅ Active | Official JSON API |
+| **Webtoon** | ✅ Active | HTML Scraping |
+| **ManhuaPlus** | ✅ Active | HTML Scraping |
+| **Comix** | ✅ Active | JSON API (`comix.to`) |
+| **Atsumaru** | ✅ Active | JSON API (`atsu.moe`) |
 
 ---
 
-## ⚙️ Configuration Guide
+## 🚀 Quick Start
 
-All core settings are easily modifiable in `config.py`.
-
-- **DIGEST_HOURS:** Comma-separated 24-hour digest hours. Default is `6,18`, matching the included twice-a-day cron schedule.
-- **MAX_FAILURES_BEFORE_ALERT:** Number of consecutive full system failures before sending a Telegram emergency alert.
-- **DISABLED_SCRAPERS:** Optional comma-separated module names to skip temporarily. Default is empty because broken/dead scrapers were removed after verification.
-
-### Adding to Watchlist
-You can add specific series to track either on specific sites or "any" site (which fuzzy matches across all trackers).
-
+### 1. Installation
 ```bash
-# Add to any site
-python oracle.py --add "Solo Leveling" any
+git clone https://github.com/yourusername/manhwa-oracle.git
+cd manhwa-oracle
+pip install -r requirements.txt
+```
 
-# Add specifically to MangaDex
-python oracle.py --add "Tower of God" MangaDex
+### 2. Configuration
+Copy the template and add your Telegram credentials.
+```bash
+cp .env.example .env
+# Open .env and set your BOT_TOKEN and CHAT_ID
+```
+
+### 3. Initialize Database
+If you are upgrading from an older version, migrate your data:
+```bash
+python oracle.py --migrate
 ```
 
 ---
 
-## 💻 CLI Commands
+## 💻 CLI Usage
 
-The `oracle.py` script comes with powerful CLI commands:
+The `oracle.py` script is your command center.
 
-- **Run Scraper (Cron Mode):**
-  ```bash
-  python oracle.py --run
-  ```
-  *(Or just `python oracle.py`)*
-  
-- **Test All Connections:**
-  ```bash
-  python oracle.py --test
-  ```
-  
-- **Add Series:**
-  ```bash
-  python oracle.py --add "Title" "SiteName"
-  ```
-  
-- **Remove Series:**
-  ```bash
-  python oracle.py --remove "Title"
-  ```
-  
-- **Check Status:**
-  ```bash
-  python oracle.py --status
-  ```
-  *(Shows all tracked series and latest read chapters)*
-  
-- **List Sites:**
-  ```bash
-  python oracle.py --sites
-  ```
-  
-- **Search (WIP):**
-  ```bash
-  python oracle.py --search "Title"
-  ```
-
-- **Run Telegram Bot:**
-  ```bash
-  python oracle.py --bot
-  ```
-  In Telegram, use the menu buttons or commands: `/latest` for recent chapters with Track/Wishlist/Open buttons, `/watch Title | any` to track, `/wish Title | any | note` to save for later, `/watchlist` and `/wishlist` to manage items, `/sites` for active sources, and `/status` to check Telegram/config/scraper status.
+| Command | Description |
+| :--- | :--- |
+| `--run` | Primary scan mode. Checks all sites for new chapters. |
+| `--flush` | Immediately sends all pending queued notifications to Telegram. |
+| `--status` | Displays your current watchlist and last seen chapters. |
+| `--add "Title" "Site"` | Adds a new series to track (use `any` for all sites). |
+| `--remove "Title"` | Removes a series from your watchlist. |
+| `--test` | Tests connectivity to all configured scrapers. |
+| `--bot` | Starts the interactive Telegram bot. |
+| `--stats` | Shows library and scanning statistics. |
+| `--site-status` | View the health and last check times of all scrapers. |
 
 ---
 
-## 🤖 Cron Setup Guide
+## 🤖 Telegram Bot Features
 
-To automate Manhwa Oracle, set up a cron job to run the script twice per day.
+Launch the bot with `python oracle.py --bot` to unlock interactive features:
 
-1. Open crontab: `crontab -e`
-2. Add the following line:
-   ```cron
-   0 6,18 * * * cd /path/to/manhwa-oracle && python oracle.py --run >> cron_log.txt 2>&1
-   ```
+- 🔔 **Real-time Interaction**: Get instant buttons to track or wishlist new series found in the latest updates.
+- 📋 **Watchlist Management**: View and edit your tracked series directly from chat.
+- 🌟 **Wishlist**: Save series you want to read later.
+- 📊 **Status Reports**: Check if the Oracle is running correctly and which sites are currently active.
+
+---
+
+## ⏱️ Automation (Cron)
+
+Keep your Oracle running 24/7 by setting up a simple cron job.
+
+```cron
+# Run every 6 hours and log output
+0 */6 * * * cd /path/to/manhwa-oracle && python oracle.py --run >> cron_log.txt 2>&1
+```
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to add new scrapers or features.
-
-If you encounter a bug or have a feature request, use our issue templates provided in the `.github` directory.
-
----
+Contributions are welcome! Whether it's a new scraper or a UI improvement for the bot, feel free to open a PR. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📄 License
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
-
-### New Features in v2.0:
-- **Self-Healing URLs:** Automatically repairs scraper domains when they go offline.
-- **SQLite Backend:** Data is now stored reliably in `oracle.db` instead of flat JSON.
-
-### New Commands:
-`python oracle.py --migrate` - Migrate JSON to SQLite
-`python oracle.py --history "Title"` - Show chapter history
-`python oracle.py --site-status` - View health of all trackers
-`python oracle.py --heal "Site"` - Manually heal a site
-`python oracle.py --stats` - View library statistics
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

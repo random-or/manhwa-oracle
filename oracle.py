@@ -153,6 +153,20 @@ class OracleOrchestrator:
         self.memory.migrate_from_json()
         print("Migration complete!")
 
+    def action_flush(self):
+        """Manually flushes the notification queue."""
+        if not self.memory.queue:
+            print("Queue is empty.")
+            return
+            
+        print(f"Flushing {len(self.memory.queue)} notifications...")
+        if self.notifier.send_daily_digest(self.memory.queue):
+            print("✅ Successfully flushed queue to Telegram.")
+            self.memory.queue = []
+            self.memory.save_all()
+        else:
+            print("❌ Failed to flush queue. Check logs.")
+
     def run_oracle(self):
         """Main scanning routine."""
         logger.info("--- ORACLE IS SCANNING ---")
@@ -228,21 +242,31 @@ class OracleOrchestrator:
         else:
             self.memory.state["fail_count"] = 0
 
-        # Digest logic. The cron is expected to run twice a day, and each
-        # configured digest hour should be allowed to send once per day.
+        # Digest logic.
         now = datetime.now()
         digest_key = now.strftime("%Y-%m-%d-%H")
         
-        if now.hour in config.DIGEST_HOURS and self.memory.state.get("last_digest_key") != digest_key:
+        # Determine if we should flush the queue
+        is_digest_hour = now.hour in config.DIGEST_HOURS
+        already_sent_this_hour = self.memory.state.get("last_digest_key") == digest_key
+        queue_is_huge = len(self.memory.queue) >= 30
+        
+        if (is_digest_hour and not already_sent_this_hour) or queue_is_huge:
             if self.memory.queue:
-                self.notifier.send_daily_digest(self.memory.queue)
-                logger.info(f"Digest sent with {len(self.memory.queue)} updates.")
-                self.memory.queue = [] # Clear queue after sending
-            else:
-                logger.info("Digest time reached but queue is empty.")
+                if queue_is_huge and not is_digest_hour:
+                    logger.warning(f"Queue size ({len(self.memory.queue)}) exceeded threshold. Forcing flush.")
                 
-            self.memory.state["last_digest_key"] = digest_key
-            self.memory.state["last_summary_date"] = now.strftime("%Y-%m-%d")
+                if self.notifier.send_daily_digest(self.memory.queue):
+                    logger.info(f"Digest sent with {len(self.memory.queue)} updates.")
+                    self.memory.queue = [] # Clear queue after sending
+                    self.memory.state["last_digest_key"] = digest_key
+                    self.memory.state["last_summary_date"] = now.strftime("%Y-%m-%d")
+                else:
+                    logger.error("Failed to send digest; queue retained.")
+            else:
+                if is_digest_hour:
+                    logger.info("Digest time reached but queue is empty.")
+                    self.memory.state["last_digest_key"] = digest_key
 
         if new_updates_count == 0:
             logger.info("No new updates found this run.")
@@ -267,6 +291,7 @@ def main():
     parser.add_argument("--heal", type=str, metavar="SITE", help="Attempt to heal a broken site URL")
     parser.add_argument("--stats", action="store_true", help="Show overall statistics")
     parser.add_argument("--migrate", action="store_true", help="Migrate data from JSON to SQLite")
+    parser.add_argument("--flush", action="store_true", help="Manually send all pending notifications")
     parser.add_argument("--bot", action="store_true", help="Run the Telegram watchlist bot")
     
     args = parser.parse_args()
@@ -288,6 +313,8 @@ def main():
         oracle.action_stats()
     elif args.migrate:
         oracle.action_migrate()
+    elif args.flush:
+        oracle.action_flush()
     elif args.bot:
         from telegram_bot import main as run_telegram_bot
         run_telegram_bot()

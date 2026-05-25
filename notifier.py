@@ -29,12 +29,12 @@ class TelegramNotifier:
             "disable_web_page_preview": True
         }
         try:
-            response = requests.post(url, json=payload, timeout=10)
+            response = requests.post(url, json=payload, timeout=30)
             if response.status_code == 429:
                 retry_after = response.json().get("parameters", {}).get("retry_after", 5)
                 logger.warning("Telegram rate limited; retrying after %s seconds", retry_after)
                 time.sleep(min(int(retry_after), 60))
-                response = requests.post(url, json=payload, timeout=10)
+                response = requests.post(url, json=payload, timeout=30)
             response.raise_for_status()
             return True
         except Exception as e:
@@ -96,6 +96,8 @@ class TelegramNotifier:
         messages = self._digest_messages(queue)
         logger.info("Sending digest as %s Telegram message(s).", len(messages))
         for index, msg in enumerate(messages, start=1):
+            if index > 1:
+                time.sleep(2) # Prevent hitting rapid-fire limits
             suffix = f"\n\nPart {index}/{len(messages)}" if len(messages) > 1 else ""
             if not self.send_message(msg + suffix):
                 logger.warning("Digest send failed at part %s/%s; queue retained.", index, len(messages))
