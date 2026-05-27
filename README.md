@@ -13,6 +13,8 @@ Manhwa Oracle is a professional-grade automation tool designed to monitor your f
 ## ✨ Key Features
 
 - 🔌 **Plugin Architecture**: Highly modular design. Adding a new site is as simple as creating a new class in `scrapers/`.
+- ⚡ **Immediate Alerts**: Scan results are sent directly to Telegram immediately after the script runs—no more waiting for fixed digest hours!
+- 📦 **Smart Scan Digests**: Automatically groups all found updates during a run into a single elegant Telegram message to avoid spam and rate limiting (customizable via `.env`).
 - 🧠 **Smart Tracking**: Fuzzy title matching ensures you don't miss updates even if sites use slightly different naming conventions.
 - 🛠️ **Self-Healing URLs**: Automatically detects when a site changes its domain and attempts to find the new one to keep your tracker alive.
 - 🗄️ **Robust SQLite Backend**: Moves beyond flat files to a reliable database for history, status tracking, and performance.

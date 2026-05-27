@@ -5,7 +5,7 @@ from config import config
 import json
 import os
 from sqlalchemy import func
-from database import init_db, SessionLocal, Series, Watchlist, Wishlist, ChapterHistory, SiteStatus, HealingHistory
+from database import init_db, SessionLocal, Series, Watchlist, Wishlist, ChapterHistory, SiteStatus, HealingHistory, SystemConfig, DigestQueue
 
 logger = logging.getLogger("Oracle")
 
@@ -18,21 +18,127 @@ def load_json(file_path: str, default: Any) -> Any:
             pass
     return default
 
+class DatabaseStateDict:
+    def __init__(self, session):
+        self.session = session
+
+    def __getitem__(self, key):
+        config_val = self.session.query(SystemConfig).filter_by(key=key).first()
+        if not config_val:
+            if key == "fail_count":
+                return 0
+            return ""
+        if key == "fail_count":
+            try:
+                return int(config_val.value)
+            except ValueError:
+                return 0
+        return config_val.value
+
+    def __setitem__(self, key, value):
+        config_val = self.session.query(SystemConfig).filter_by(key=key).first()
+        if not config_val:
+            config_val = SystemConfig(key=key, value=str(value))
+            self.session.add(config_val)
+        else:
+            config_val.value = str(value)
+        self.session.commit()
+
+    def get(self, key, default=None):
+        config_val = self.session.query(SystemConfig).filter_by(key=key).first()
+        if not config_val:
+            return default
+        if key == "fail_count":
+            try:
+                return int(config_val.value)
+            except ValueError:
+                return 0
+        return config_val.value
+
+
+class DatabaseQueueList:
+    def __init__(self, session):
+        self.session = session
+
+    def append(self, item):
+        db_item = DigestQueue(
+            title=item.get("title", "Unknown"),
+            site=item.get("site", "Unknown"),
+            chapter=float(item.get("chapter", 0.0)),
+            url=item.get("url", ""),
+            is_new=bool(item.get("is_new", False))
+        )
+        self.session.add(db_item)
+        self.session.commit()
+
+    def __len__(self):
+        return self.session.query(DigestQueue).count()
+
+    def __bool__(self):
+        return len(self) > 0
+
+    def __iter__(self):
+        items = self.session.query(DigestQueue).order_by(DigestQueue.added_at.asc()).all()
+        return iter([
+            {
+                "title": item.title,
+                "site": item.site,
+                "chapter": int(item.chapter) if item.chapter.is_integer() else item.chapter,
+                "url": item.url,
+                "is_new": item.is_new
+            }
+            for item in items
+        ])
+
+    def clear(self):
+        self.session.query(DigestQueue).delete()
+        self.session.commit()
+
+
 class MemoryManager:
     def __init__(self):
         init_db()
         self.session = SessionLocal()
-        # Fallback state/queue mapping
-        self.state = load_json(config.STATE_FILE, {"fail_count": 0, "last_summary_date": ""})
-        self.queue = load_json(config.QUEUE_FILE, [])
-        self._notify_all = load_json(config.WATCHLIST_FILE, {}).get("notify_all", False)
+        self.state = DatabaseStateDict(self.session)
+
+    @property
+    def queue(self):
+        return DatabaseQueueList(self.session)
+
+    @queue.setter
+    def queue(self, value):
+        if isinstance(value, list) and not value:
+            self.queue.clear()
+
+    @property
+    def _notify_all(self) -> bool:
+        config_val = self.session.query(SystemConfig).filter_by(key="notify_all").first()
+        if not config_val:
+            return False
+        return config_val.value.lower() == "true"
+
+    @_notify_all.setter
+    def _notify_all(self, value: bool):
+        config_val = self.session.query(SystemConfig).filter_by(key="notify_all").first()
+        if not config_val:
+            config_val = SystemConfig(key="notify_all", value=str(value).lower())
+            self.session.add(config_val)
+        else:
+            config_val.value = str(value).lower()
+        self.session.commit()
+
+    def close(self):
+        if hasattr(self, 'session') and self.session:
+            self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     def save_all(self):
-        with open(config.STATE_FILE, "w", encoding='utf-8') as f:
-            json.dump(self.state, f, indent=4)
-        with open(config.QUEUE_FILE, "w", encoding='utf-8') as f:
-            json.dump(self.queue, f, indent=4)
-        # SQLite is auto-saved on commit, so we don't need to dump memory/watchlist
+        pass
 
     @property
     def watchlist(self):
@@ -154,6 +260,32 @@ class MemoryManager:
             if not self.session.query(Watchlist).filter_by(site=site, title=title).first():
                 w = Watchlist(site=site, title=title)
                 self.session.add(w)
+                
+        # Migrate state
+        state_data = load_json(config.STATE_FILE, {})
+        for k, v in state_data.items():
+            if not self.session.query(SystemConfig).filter_by(key=k).first():
+                config_item = SystemConfig(key=k, value=str(v))
+                self.session.add(config_item)
+        
+        # Migrate notify_all
+        notify_all = watchlist_data.get("notify_all", False)
+        if not self.session.query(SystemConfig).filter_by(key="notify_all").first():
+            notify_item = SystemConfig(key="notify_all", value=str(notify_all).lower())
+            self.session.add(notify_item)
+
+        # Migrate queue
+        queue_data = load_json(config.QUEUE_FILE, [])
+        for item in queue_data:
+            if not self.session.query(DigestQueue).filter_by(title=item.get("title"), site=item.get("site"), chapter=float(item.get("chapter", 0.0))).first():
+                db_item = DigestQueue(
+                    title=item.get("title", "Unknown"),
+                    site=item.get("site", "Unknown"),
+                    chapter=float(item.get("chapter", 0.0)),
+                    url=item.get("url", ""),
+                    is_new=bool(item.get("is_new", False))
+                )
+                self.session.add(db_item)
                 
         self.session.commit()
         logger.info("✅ SQLite migration complete!")

@@ -208,6 +208,7 @@ class OracleOrchestrator:
                         healer.mark_dead(scraper.site_name)
                         self.notifier.send_message(f"💀 <b>Healer</b>\n{scraper.site_name} is marked as DEAD.")
             else:
+                logger.info(f"[{scraper.site_name}] Scraped {len(updates)} chapters.")
                 for item in updates:
                     title = item["title"]
                     site = item["site"]
@@ -220,10 +221,21 @@ class OracleOrchestrator:
                     
                     if current_ch > last_seen:
                         item["is_new"] = (last_seen == 0.0)
-                        self.memory.queue.append(item)
-                        logger.info(f"QUEUED: {title} Ch.{current_ch} from {site}")
-                        self.memory.update_last_seen_chapter(site, title, current_ch)
-                        new_updates_count += 1
+                        if config.NOTIFY_IMMEDIATELY:
+                            logger.info(f"NOTIFYING IMMEDIATELY: {title} Ch.{current_ch} from {site}")
+                            if self.notifier.notify_update(item):
+                                self.memory.update_last_seen_chapter(site, title, current_ch)
+                                new_updates_count += 1
+                            else:
+                                logger.error(f"Failed to send immediate notification for {title}. Queueing instead.")
+                                self.memory.queue.append(item)
+                                self.memory.update_last_seen_chapter(site, title, current_ch)
+                                new_updates_count += 1
+                        else:
+                            self.memory.queue.append(item)
+                            logger.info(f"QUEUED: {title} Ch.{current_ch} from {site}")
+                            self.memory.update_last_seen_chapter(site, title, current_ch)
+                            new_updates_count += 1
             
             # Rate limiting between sites
             if i < len(SCRAPERS) - 1:
@@ -242,31 +254,21 @@ class OracleOrchestrator:
         else:
             self.memory.state["fail_count"] = 0
 
-        # Digest logic.
+        # Send scan updates immediately if there are any
         now = datetime.now()
         digest_key = now.strftime("%Y-%m-%d-%H")
-        
-        # Determine if we should flush the queue
-        is_digest_hour = now.hour in config.DIGEST_HOURS
-        already_sent_this_hour = self.memory.state.get("last_digest_key") == digest_key
-        queue_is_huge = len(self.memory.queue) >= 30
-        
-        if (is_digest_hour and not already_sent_this_hour) or queue_is_huge:
-            if self.memory.queue:
-                if queue_is_huge and not is_digest_hour:
-                    logger.warning(f"Queue size ({len(self.memory.queue)}) exceeded threshold. Forcing flush.")
-                
-                if self.notifier.send_daily_digest(self.memory.queue):
-                    logger.info(f"Digest sent with {len(self.memory.queue)} updates.")
-                    self.memory.queue = [] # Clear queue after sending
-                    self.memory.state["last_digest_key"] = digest_key
-                    self.memory.state["last_summary_date"] = now.strftime("%Y-%m-%d")
-                else:
-                    logger.error("Failed to send digest; queue retained.")
+
+        if self.memory.queue:
+            logger.info(f"Flushing {len(self.memory.queue)} updates to Telegram...")
+            if self.notifier.send_scan_digest(self.memory.queue):
+                logger.info(f"Scan digest sent with {len(self.memory.queue)} updates.")
+                self.memory.queue = [] # Clear queue after sending
+                self.memory.state["last_digest_key"] = digest_key
+                self.memory.state["last_summary_date"] = now.strftime("%Y-%m-%d")
             else:
-                if is_digest_hour:
-                    logger.info("Digest time reached but queue is empty.")
-                    self.memory.state["last_digest_key"] = digest_key
+                logger.error("Failed to send scan digest; queue retained.")
+        else:
+            logger.info("No queued updates to send.")
 
         if new_updates_count == 0:
             logger.info("No new updates found this run.")
@@ -293,39 +295,47 @@ def main():
     parser.add_argument("--migrate", action="store_true", help="Migrate data from JSON to SQLite")
     parser.add_argument("--flush", action="store_true", help="Manually send all pending notifications")
     parser.add_argument("--bot", action="store_true", help="Run the Telegram watchlist bot")
+    parser.add_argument("--notify-all", choices=["true", "false", "on", "off"], help="Toggle global Notify All mode")
     
     args = parser.parse_args()
     oracle = OracleOrchestrator()
     
-    if args.test:
-        oracle.action_test()
-    elif args.sites:
-        oracle.action_sites()
-    elif args.status:
-        oracle.action_status()
-    elif args.history:
-        oracle.action_history(args.history)
-    elif args.site_status:
-        oracle.action_site_status()
-    elif args.heal:
-        oracle.action_heal(args.heal)
-    elif args.stats:
-        oracle.action_stats()
-    elif args.migrate:
-        oracle.action_migrate()
-    elif args.flush:
-        oracle.action_flush()
-    elif args.bot:
-        from telegram_bot import main as run_telegram_bot
-        run_telegram_bot()
-    elif args.add:
-        oracle.action_add(args.add[0], args.add[1])
-    elif args.remove:
-        oracle.action_remove(args.remove)
-    elif args.search:
-        oracle.action_search(args.search)
-    elif args.run or not any(vars(args).values()):
-        oracle.run_oracle()
+    try:
+        if args.test:
+            oracle.action_test()
+        elif args.sites:
+            oracle.action_sites()
+        elif args.status:
+            oracle.action_status()
+        elif args.history:
+            oracle.action_history(args.history)
+        elif args.site_status:
+            oracle.action_site_status()
+        elif args.heal:
+            oracle.action_heal(args.heal)
+        elif args.stats:
+            oracle.action_stats()
+        elif args.migrate:
+            oracle.action_migrate()
+        elif args.flush:
+            oracle.action_flush()
+        elif args.bot:
+            from telegram_bot import main as run_telegram_bot
+            run_telegram_bot()
+        elif args.notify_all:
+            val = args.notify_all.lower() in ("true", "on")
+            oracle.memory._notify_all = val
+            print(f"✅ Global 'Notify All' mode set to: {'ON' if val else 'OFF'}")
+        elif args.add:
+            oracle.action_add(args.add[0], args.add[1])
+        elif args.remove:
+            oracle.action_remove(args.remove)
+        elif args.search:
+            oracle.action_search(args.search)
+        elif args.run or not any(vars(args).values()):
+            oracle.run_oracle()
+    finally:
+        oracle.memory.close()
 
 if __name__ == "__main__":
     main()

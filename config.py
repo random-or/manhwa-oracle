@@ -11,6 +11,9 @@ class Config:
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     CHAT_ID: str = os.getenv("CHAT_ID", "")
     
+    # Notification settings
+    NOTIFY_IMMEDIATELY: bool = os.getenv("NOTIFY_IMMEDIATELY", "false").lower() == "true"
+    
     # File paths
     MEMORY_FILE: str = "memory.json"
     WATCHLIST_FILE: str = "watchlist.json"

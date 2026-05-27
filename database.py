@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +51,21 @@ class HealingHistory(Base):
     new_url = Column(String, nullable=False)
     healed_at = Column(DateTime, default=datetime.utcnow)
 
+class SystemConfig(Base):
+    __tablename__ = 'system_config'
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+
+class DigestQueue(Base):
+    __tablename__ = 'digest_queue'
+    id = Column(Integer, primary_key=True)
+    title = Column(String, nullable=False)
+    site = Column(String, nullable=False)
+    chapter = Column(Float, nullable=False)
+    url = Column(String, nullable=False)
+    is_new = Column(Boolean, default=False)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / 'oracle.db'
 
@@ -59,3 +74,5 @@ SessionLocal = sessionmaker(bind=engine)
 
 def init_db():
     Base.metadata.create_all(engine)
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL;"))

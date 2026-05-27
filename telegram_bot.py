@@ -126,17 +126,22 @@ def create_bot() -> telebot.TeleBot:
             wish_count = len(memory.list_wishlist())
             queue_count = len(memory.queue)
             site_count = len(SCRAPERS)
+            notify_all = memory._notify_all
             lines = [
                 "📊 <b>Oracle Status</b>",
                 f"Telegram: {'✅' if ok else '❌'} {telegram_status}",
                 f"Authorized chat: {'set' if config.CHAT_ID else 'not restricted'}",
+                f"Mode: <b>{'Notify All 📢' if notify_all else 'Watchlist Only 📚'}</b>",
                 f"Active scrapers: {site_count}",
                 f"Watchlist: {watch_count}",
                 f"Wishlist: {wish_count}",
                 f"Queued digest items: {queue_count}",
                 f"Digest hours: {', '.join(str(h) for h in sorted(config.DIGEST_HOURS))}",
             ]
-            bot.reply_to(message, "\n".join(lines), reply_markup=_main_keyboard())
+            keyboard = types.InlineKeyboardMarkup()
+            toggle_text = "📢 Switch to Notify All" if not notify_all else "📚 Switch to Watchlist Only"
+            keyboard.add(types.InlineKeyboardButton(toggle_text, callback_data="toggle_notify_all"))
+            bot.reply_to(message, "\n".join(lines), reply_markup=keyboard)
         finally:
             memory.session.close()
 
@@ -314,11 +319,52 @@ def create_bot() -> telebot.TeleBot:
     def handle_latest_button(message):
         handle_latest(message)
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith(("watch:", "watchany:", "wish:", "unwatch:", "unwish:", "promote:")))
+    @bot.callback_query_handler(func=lambda call: call.data.startswith(("watch:", "watchany:", "wish:", "unwatch:", "unwish:", "promote:", "toggle_notify_all")))
     def handle_callback(call):
         chat_id = call.message.chat.id
         if config.CHAT_ID and str(chat_id) != str(config.CHAT_ID):
             bot.answer_callback_query(call.id, "Not authorized")
+            return
+
+        if call.data == "toggle_notify_all":
+            memory = MemoryManager()
+            try:
+                current = memory._notify_all
+                new_val = not current
+                memory._notify_all = new_val
+                
+                # Edit status message to reflect new status
+                ok, telegram_status = _telegram_api_status()
+                watch_count = len(memory.watchlist.get("watching", []))
+                wish_count = len(memory.list_wishlist())
+                queue_count = len(memory.queue)
+                site_count = len(SCRAPERS)
+                
+                lines = [
+                    "📊 <b>Oracle Status</b>",
+                    f"Telegram: {'✅' if ok else '❌'} {telegram_status}",
+                    f"Authorized chat: {'set' if config.CHAT_ID else 'not restricted'}",
+                    f"Mode: <b>{'Notify All 📢' if new_val else 'Watchlist Only 📚'}</b>",
+                    f"Active scrapers: {site_count}",
+                    f"Watchlist: {watch_count}",
+                    f"Wishlist: {wish_count}",
+                    f"Queued digest items: {queue_count}",
+                    f"Digest hours: {', '.join(str(h) for h in sorted(config.DIGEST_HOURS))}",
+                ]
+                
+                keyboard = types.InlineKeyboardMarkup()
+                toggle_text = "📢 Switch to Notify All" if not new_val else "📚 Switch to Watchlist Only"
+                keyboard.add(types.InlineKeyboardButton(toggle_text, callback_data="toggle_notify_all"))
+                
+                bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=call.message.message_id,
+                    text="\n".join(lines),
+                    reply_markup=keyboard
+                )
+                bot.answer_callback_query(call.id, f"Mode set to {'Notify All' if new_val else 'Watchlist Only'}")
+            finally:
+                memory.session.close()
             return
 
         action, raw_index = call.data.split(":", 1)

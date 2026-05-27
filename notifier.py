@@ -49,9 +49,9 @@ class TelegramNotifier:
         msg += f"🔗 Read Now: {escape(str(item['url']))}"
         return self.send_message(msg)
 
-    def _digest_messages(self, queue: List[Dict[str, Any]]) -> List[str]:
+    def _digest_messages(self, queue: List[Dict[str, Any]], title: str = "📅 <b>DAILY MANHWA DIGEST</b>") -> List[str]:
         """Build Telegram-safe digest chunks under the 4096 character limit."""
-        header = "📅 <b>DAILY MANHWA DIGEST</b>\n━━━━━━━━━━━━━━━━━━━━\n"
+        header = f"{title}\n━━━━━━━━━━━━━━━━━━━━\n"
         messages: List[str] = []
         current = header
 
@@ -69,10 +69,10 @@ class TelegramNotifier:
 
             for item in items:
                 icon = "🌟" if item.get("is_new") else "🔥"
-                title = escape(str(item.get("title", "Unknown")))
+                title_str = escape(str(item.get("title", "Unknown")))
                 chapter = escape(str(item.get("chapter", "?")))
                 url = escape(str(item.get("url", "")), quote=True)
-                line = f"{icon} <b>{title}</b> - Ch.{chapter}\n"
+                line = f"{icon} <b>{title_str}</b> - Ch.{chapter}\n"
                 if url:
                     line += f"🔗 <a href=\"{url}\">Read Here</a>\n"
 
@@ -101,5 +101,21 @@ class TelegramNotifier:
             suffix = f"\n\nPart {index}/{len(messages)}" if len(messages) > 1 else ""
             if not self.send_message(msg + suffix):
                 logger.warning("Digest send failed at part %s/%s; queue retained.", index, len(messages))
+                return False
+        return True
+
+    def send_scan_digest(self, queue: List[Dict[str, Any]]) -> bool:
+        """Sends a grouped scan updates digest immediately."""
+        if not queue:
+            return True
+
+        messages = self._digest_messages(queue, title="🔮 <b>NEW ORACLE UPDATES</b>")
+        logger.info("Sending scan digest as %s Telegram message(s).", len(messages))
+        for index, msg in enumerate(messages, start=1):
+            if index > 1:
+                time.sleep(2) # Prevent hitting rapid-fire limits
+            suffix = f"\n\nPart {index}/{len(messages)}" if len(messages) > 1 else ""
+            if not self.send_message(msg + suffix):
+                logger.warning("Scan digest send failed at part %s/%s; queue retained.", index, len(messages))
                 return False
         return True

@@ -94,9 +94,6 @@ class BaseScraper(ABC):
         try:
             self.rotate_user_agent()
             response = self.scraper.get(self.base_url, headers=self.headers, timeout=15)
-            # Accept 200 OK or 403 (often cloudflare/bot protection but site is up)
-            if response.status_code == 403:
-                return True
             if response.status_code != 200:
                 return False
             response.encoding = response.apparent_encoding or response.encoding
