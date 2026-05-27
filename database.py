@@ -66,6 +66,15 @@ class DigestQueue(Base):
     is_new = Column(Boolean, default=False)
     added_at = Column(DateTime, default=datetime.utcnow)
 
+class CallbackSession(Base):
+    __tablename__ = 'callback_sessions'
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer, nullable=False)
+    session_type = Column(String, nullable=False)  # 'latest', 'watchlist', 'wishlist', 'search'
+    choice_index = Column(Integer, nullable=False)
+    data_json = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / 'oracle.db'
 

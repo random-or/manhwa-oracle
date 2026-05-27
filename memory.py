@@ -1,11 +1,11 @@
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional, Union
 from thefuzz import fuzz
 from config import config
 import json
 import os
 from sqlalchemy import func
-from database import init_db, SessionLocal, Series, Watchlist, Wishlist, ChapterHistory, SiteStatus, HealingHistory, SystemConfig, DigestQueue
+from database import init_db, SessionLocal, Series, Watchlist, Wishlist, ChapterHistory, SiteStatus, HealingHistory, SystemConfig, DigestQueue, CallbackSession
 
 logger = logging.getLogger("Oracle")
 
@@ -232,6 +232,37 @@ class MemoryManager:
             self.session.delete(item)
         self.session.commit()
         return added
+
+    def save_callback_choices(self, chat_id: int, session_type: str, choices: List[Dict[str, Any]]):
+        from datetime import datetime, timedelta
+        # Prune existing entries for this chat_id + session_type
+        self.session.query(CallbackSession).filter_by(chat_id=chat_id, session_type=session_type).delete()
+        
+        # Prune globally expired entries (older than 2 hours)
+        expiry_limit = datetime.utcnow() - timedelta(hours=2)
+        self.session.query(CallbackSession).filter(CallbackSession.created_at < expiry_limit).delete()
+        
+        # Save new choices
+        for index, item in enumerate(choices):
+            session_item = CallbackSession(
+                chat_id=chat_id,
+                session_type=session_type,
+                choice_index=index,
+                data_json=json.dumps(item)
+            )
+            self.session.add(session_item)
+        self.session.commit()
+
+    def get_callback_choice(self, chat_id: int, session_type: str, index: int) -> Optional[Dict[str, Any]]:
+        from typing import Optional
+        session_item = self.session.query(CallbackSession).filter_by(
+            chat_id=chat_id,
+            session_type=session_type,
+            choice_index=index
+        ).first()
+        if session_item:
+            return json.loads(session_item.data_json)
+        return None
 
     def migrate_from_json(self):
         """Migrates data from memory.json and watchlist.json to SQLite."""

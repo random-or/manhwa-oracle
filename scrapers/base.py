@@ -39,6 +39,10 @@ class BaseScraper(ABC):
         """Return an absolute URL for site-relative chapter links."""
         return urljoin(self.base_url, href or "")
 
+    def search(self, query: str) -> List[Dict[str, str]]:
+        """Optional method to search for a title. Returns a list of dicts with title, site, and optionally url."""
+        return []
+
     @staticmethod
     def parse_chapter(value: object) -> Optional[Union[int, float]]:
         """Parse a chapter value into int/float, returning None when unavailable."""

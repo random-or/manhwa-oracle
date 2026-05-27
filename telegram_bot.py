@@ -15,10 +15,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("TelegramBot")
 
-# callback_data is limited by Telegram, so store selected rows in-process by chat.
-LATEST_CHOICES: Dict[int, List[Dict[str, Any]]] = {}
-WATCHLIST_CHOICES: Dict[int, List[Dict[str, str]]] = {}
-WISHLIST_CHOICES: Dict[int, List[Dict[str, str]]] = {}
+# Choices are now persisted in SQLite (CallbackSession table) to handle restarts gracefully.
 
 
 def _require_config() -> None:
@@ -51,6 +48,7 @@ def _help_text() -> str:
         "🔮 <b>Manhwa Oracle</b>\n\n"
         "Tap the menu buttons, or use commands:\n"
         "/latest - show recent chapters with Track/Wishlist buttons\n"
+        "/search &lt;title&gt; - search MangaDex and others to track/wishlist\n"
         "/watch &lt;title&gt; | &lt;site&gt; - track a title, site can be any\n"
         "/trackall &lt;title&gt; - shortcut for /watch title | any\n"
         "/unwatch &lt;title&gt; - remove a tracked title\n"
@@ -156,7 +154,7 @@ def create_bot() -> telebot.TeleBot:
         memory = MemoryManager()
         try:
             items = memory.watchlist.get("watching", [])
-            WATCHLIST_CHOICES[message.chat.id] = items
+            memory.save_callback_choices(message.chat.id, "watchlist", items)
             if not items:
                 bot.reply_to(message, "Your watchlist is empty. Use /latest and tap Track, or /watch Title | any.", reply_markup=_main_keyboard())
                 return
@@ -179,7 +177,7 @@ def create_bot() -> telebot.TeleBot:
         memory = MemoryManager()
         try:
             items = memory.list_wishlist()
-            WISHLIST_CHOICES[message.chat.id] = items
+            memory.save_callback_choices(message.chat.id, "wishlist", items)
             if not items:
                 bot.reply_to(message, "Your wishlist is empty. Use /latest and tap Wishlist, or /wish Title | any.", reply_markup=_main_keyboard())
                 return
@@ -279,6 +277,53 @@ def create_bot() -> telebot.TeleBot:
         finally:
             memory.session.close()
 
+    @bot.message_handler(commands=["search"])
+    def handle_search(message):
+        if not _allowed_chat(message):
+            return
+        query = message.text.partition(" ")[2].strip()
+        if not query:
+            bot.reply_to(message, "Usage: /search <title>\nExample: /search Solo Leveling")
+            return
+            
+        bot.reply_to(message, f"🔍 Searching for '{query}'...", reply_markup=_main_keyboard())
+        results = []
+        for scraper in SCRAPERS:
+            try:
+                res = scraper.search(query)
+                if res:
+                    results.extend(res)
+            except Exception as e:
+                logger.warning(f"Search failed for {scraper.site_name}: {e}")
+                
+        if not results:
+            bot.send_message(message.chat.id, "No matching titles found across any sites.", reply_markup=_main_keyboard())
+            return
+            
+        # Limit to top 10 results
+        results = results[:10]
+        
+        # Save to database session
+        memory = MemoryManager()
+        try:
+            memory.save_callback_choices(message.chat.id, "search", results)
+            
+            for index, item in enumerate(results):
+                keyboard = types.InlineKeyboardMarkup()
+                keyboard.add(types.InlineKeyboardButton("➕ Track site", callback_data=f"watch_search:{index}"))
+                keyboard.add(types.InlineKeyboardButton("🌍 Track any site", callback_data=f"watchany_search:{index}"))
+                keyboard.add(types.InlineKeyboardButton("⭐ Wishlist", callback_data=f"wish_search:{index}"))
+                if item.get("url"):
+                    keyboard.add(types.InlineKeyboardButton("🔗 Open details", url=item["url"]))
+                    
+                text = (
+                    f"📖 <b>{item['title']}</b>\n"
+                    f"🌐 Site: {item['site']}"
+                )
+                bot.send_message(message.chat.id, text, reply_markup=keyboard, disable_web_page_preview=True)
+        finally:
+            memory.session.close()
+
     @bot.message_handler(commands=["latest", "choose"])
     def handle_latest(message):
         if not _allowed_chat(message):
@@ -301,7 +346,12 @@ def create_bot() -> telebot.TeleBot:
             bot.send_message(message.chat.id, "No latest chapters found right now.", reply_markup=_main_keyboard())
             return
 
-        LATEST_CHOICES[message.chat.id] = choices
+        memory = MemoryManager()
+        try:
+            memory.save_callback_choices(message.chat.id, "latest", choices)
+        finally:
+            memory.session.close()
+            
         for index, item in enumerate(choices):
             keyboard = types.InlineKeyboardMarkup()
             keyboard.add(types.InlineKeyboardButton("➕ Track site", callback_data=f"watch:{index}"))
@@ -319,7 +369,7 @@ def create_bot() -> telebot.TeleBot:
     def handle_latest_button(message):
         handle_latest(message)
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith(("watch:", "watchany:", "wish:", "unwatch:", "unwish:", "promote:", "toggle_notify_all")))
+    @bot.callback_query_handler(func=lambda call: call.data.startswith(("watch:", "watchany:", "wish:", "unwatch:", "unwish:", "promote:", "toggle_notify_all", "watch_search:", "watchany_search:", "wish_search:")))
     def handle_callback(call):
         chat_id = call.message.chat.id
         if config.CHAT_ID and str(chat_id) != str(config.CHAT_ID):
@@ -376,8 +426,27 @@ def create_bot() -> telebot.TeleBot:
 
         memory = MemoryManager()
         try:
+            if action in {"watch_search", "watchany_search", "wish_search"}:
+                item = memory.get_callback_choice(chat_id, "search", index)
+                if not item:
+                    bot.answer_callback_query(call.id, "That search choice expired. Run the command again.")
+                    return
+                if action == "wish_search":
+                    added = memory.add_to_wishlist(item["title"], item["site"], "from /search")
+                    bot.answer_callback_query(call.id, "Saved to wishlist" if added else "Already in wishlist")
+                    bot.send_message(chat_id, f"⭐ Wishlist: <b>{item['title']}</b>.")
+                else:
+                    site = "any" if action == "watchany_search" else item["site"]
+                    added = memory.add_to_watchlist(site, item["title"])
+                    bot.answer_callback_query(call.id, "Added to watchlist" if added else "Already tracked")
+                    bot.send_message(chat_id, f"✅ Tracking <b>{item['title']}</b> on <b>{site}</b>.")
+                return
+
             if action in {"watch", "watchany", "wish"}:
-                item = LATEST_CHOICES.get(chat_id, [])[index]
+                item = memory.get_callback_choice(chat_id, "latest", index)
+                if not item:
+                    bot.answer_callback_query(call.id, "That choice expired. Run the command again.")
+                    return
                 if action == "wish":
                     added = memory.add_to_wishlist(item["title"], item["site"], "from /latest")
                     bot.answer_callback_query(call.id, "Saved to wishlist" if added else "Already in wishlist")
@@ -390,21 +459,30 @@ def create_bot() -> telebot.TeleBot:
                 return
 
             if action == "unwatch":
-                item = WATCHLIST_CHOICES.get(chat_id, [])[index]
+                item = memory.get_callback_choice(chat_id, "watchlist", index)
+                if not item:
+                    bot.answer_callback_query(call.id, "That choice expired. Run the command again.")
+                    return
                 removed = memory.remove_from_watchlist(item["title"])
                 bot.answer_callback_query(call.id, "Removed" if removed else "Not found")
                 bot.send_message(chat_id, f"🗑 Removed <b>{item['title']}</b> from watchlist.")
                 return
 
             if action == "unwish":
-                item = WISHLIST_CHOICES.get(chat_id, [])[index]
+                item = memory.get_callback_choice(chat_id, "wishlist", index)
+                if not item:
+                    bot.answer_callback_query(call.id, "That choice expired. Run the command again.")
+                    return
                 removed = memory.remove_from_wishlist(item["title"])
                 bot.answer_callback_query(call.id, "Removed" if removed else "Not found")
                 bot.send_message(chat_id, f"🗑 Removed <b>{item['title']}</b> from wishlist.")
                 return
 
             if action == "promote":
-                item = WISHLIST_CHOICES.get(chat_id, [])[index]
+                item = memory.get_callback_choice(chat_id, "wishlist", index)
+                if not item:
+                    bot.answer_callback_query(call.id, "That choice expired. Run the command again.")
+                    return
                 added = memory.promote_wishlist_to_watchlist(item["title"], item.get("site") or "any")
                 bot.answer_callback_query(call.id, "Moved to watchlist" if added else "Already tracked; removed from wishlist")
                 bot.send_message(chat_id, f"✅ Now tracking <b>{item['title']}</b>.")

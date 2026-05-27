@@ -86,9 +86,25 @@ class OracleOrchestrator:
             print(f"⚠️ '{title}' is not in your watchlist.")
 
     def action_search(self, title: str):
-        """Searches all sites. (Not fully implemented for all in BaseScraper, but skeleton provided)"""
-        print(f"🔍 Searching for '{title}' across all sites is not fully supported yet.")
-        print("Please check individual sites directly.")
+        """Searches all sites."""
+        print(f"🔍 Searching for '{title}' across all sites...")
+        results = []
+        for scraper in SCRAPERS:
+            try:
+                res = scraper.search(title)
+                if res:
+                    results.extend(res)
+            except Exception as e:
+                logger.debug(f"Search failed for {scraper.site_name}: {e}")
+        
+        if not results:
+            print("❌ No matching titles found.")
+            return
+            
+        print("\n🔍 Search Results:")
+        print("=================")
+        for idx, item in enumerate(results, start=1):
+            print(f"{idx}. {item['title']} ({item['site']})")
 
     def action_history(self, title: str):
         """Shows chapter history for a series."""

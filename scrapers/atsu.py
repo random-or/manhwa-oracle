@@ -65,23 +65,36 @@ class AtsuScraper(BaseScraper):
             sections = response.json().get("homePage", {}).get("sections", [])
             recent_section = next((section for section in sections if section.get("key") == "recently-updated"), None)
             items = (recent_section or {}).get("items", [])
-            updates = []
+            
             seen = set()
+            to_fetch = []
             for item in items[:20]:
                 title = item.get("title")
                 manga_id = item.get("id")
                 if not title or not manga_id or title in seen:
                     continue
-                chapter = self._latest_chapter_for_manga(manga_id)
-                if chapter is None:
-                    continue
-                updates.append({
-                    "title": title,
-                    "chapter": chapter,
-                    "url": self.absolute_url(f"/manga/{manga_id}"),
-                    "site": self.site_name,
-                })
+                to_fetch.append((title, manga_id))
                 seen.add(title)
+
+            updates = []
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(self._latest_chapter_for_manga, manga_id): (title, manga_id) for title, manga_id in to_fetch}
+                for future in as_completed(futures):
+                    title, manga_id = futures[future]
+                    try:
+                        chapter = future.result()
+                        if chapter is not None:
+                            updates.append({
+                                "title": title,
+                                "chapter": chapter,
+                                "url": self.absolute_url(f"/manga/{manga_id}"),
+                                "site": self.site_name,
+                            })
+                    except Exception as exc:
+                        logger.error(f"[{self.site_name}] Thread error fetching {title}: {exc}")
+                        
             return updates
         except Exception as exc:
             logger.error(f"[{self.site_name}] Scraper error: {exc}")

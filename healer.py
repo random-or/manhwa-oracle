@@ -40,15 +40,25 @@ class SiteHealer:
         base_name = base_domain.split(".")[0]
             
         found_url = None
-        for tld in tlds:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def test_tld(tld: str) -> Optional[str]:
             test_url = f"https://{base_name}{tld}/"
             try:
                 response = requests.get(test_url, timeout=5, allow_redirects=True)
                 if response.status_code == 200 and len(response.text) > 1000:
-                    found_url = response.url
-                    break
+                    return response.url
             except Exception:
-                continue
+                pass
+            return None
+
+        with ThreadPoolExecutor(max_workers=len(tlds)) as executor:
+            futures = {executor.submit(test_tld, tld): tld for tld in tlds}
+            for future in as_completed(futures):
+                res = future.result()
+                if res:
+                    found_url = res
+                    break
                 
         if found_url:
             logger.info(f"Successfully found new URL for {site_name}: {found_url}")

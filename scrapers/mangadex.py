@@ -75,3 +75,30 @@ class MangaDexScraper(BaseScraper):
             return response.status_code == 200
         except:
             return False
+
+    def search(self, query: str) -> List[Dict[str, str]]:
+        api_url = "https://api.mangadex.org/manga"
+        params = {
+            "title": query,
+            "limit": 5
+        }
+        try:
+            self.rotate_user_agent()
+            response = requests.get(api_url, headers=self.headers, params=params, timeout=10)
+            if response.status_code != 200:
+                return []
+            data = response.json().get("data", [])
+            results = []
+            for item in data:
+                manga_id = item.get("id")
+                title_dict = item.get("attributes", {}).get("title", {})
+                manga_title = title_dict.get("en") or list(title_dict.values())[0] if title_dict else "Unknown"
+                results.append({
+                    "title": manga_title,
+                    "site": self.site_name,
+                    "url": f"{self.base_url}manga/{manga_id}"
+                })
+            return results
+        except Exception as e:
+            logger.error(f"[{self.site_name}] Search error: {e}")
+            return []
